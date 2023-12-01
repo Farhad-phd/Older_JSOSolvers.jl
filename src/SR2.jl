@@ -171,7 +171,6 @@ function SolverCore.solve!(
     set_objective!(stats, obj(nlp, x))
     grad!(nlp, x, ∇fk)
     norm_∇fk = norm(∇fk)
-    # # TODO can we have it here?
     set_dual_residual!(stats, norm_∇fk)
     # optimal = norm_∇fk ≤ ϵ #todo we need to check
     # we will be slower but more accurate  and no need to do them in the callback 
@@ -191,7 +190,7 @@ function SolverCore.solve!(
       ck .= x .- (d ./ σk)
     end
 
-    ΔTk = norm_∇fk^2 / σk #TODO confirm if 1/2 is missing here ?
+    ΔTk =  norm_∇fk /μk  #norm_∇fk^2 / σk #TODO confirm if 1/2 is missing here ?
     fck = obj(nlp, ck)
 
     if fck == -Inf
@@ -201,34 +200,18 @@ function SolverCore.solve!(
 
     ρk = (stats.objective - fck) / ΔTk
 
-    # Update regularization parameters
-    if ρk >= η1 && σk >= η2
-      μk = max(μmin,  μk * γ2 )
-    else
-      μk = μk * γ1  
-    end
-
-    # Acceptance of the new candidate
+    # Update regularization parameters and Acceptance of the new candidate
     if ρk >= η1 && σk >= η2  # if we move the μ^-1 to the left side 
       x .= ck
-      #TODO no need of them ?
-      # set_objective!(stats, fck)
-      # grad!(nlp, x, ∇fk)
-      # norm_∇fk = norm(∇fk)
+      μk = max(μmin,  μk * γ2 )
+    else
+      μk = μk * γ1 
     end
-    # TODO we do not need to compute them here
-    # set_dual_residual!(stats, norm_∇fk)
-    # optimal = norm_∇fk ≤ ϵ #todo we need to check TODO we do not need it in stochastic since may optimal happen but we still need to continue
 
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
-
-
-    # #TODO this is not accurate now 
-    # if verbose > 0 && mod(stats.iter, verbose) == 0
-    #   @info infoline
-    #   infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk
-    # end
+    # set_dual_residual!(stats, norm_∇fk)
+    # optimal = norm_∇fk ≤ ϵ
 
     set_status!(
       stats,
@@ -244,7 +227,6 @@ function SolverCore.solve!(
     )
     solver.μ= μk
     callback(nlp, solver, stats)
-    # μk = solver.μ
 
     done = stats.status != :unknown
   end

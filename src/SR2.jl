@@ -3,7 +3,7 @@ export SR2, SR2Solver
 """
     SR2(nlp; kwargs...)
 
-A first-order quadratic regularization method for unconstrained optimization.
+A stochastic first-order quadratic regularization method for unconstrained optimization.
 
 For advanced usage, first define a `SR2Solver` to preallocate the memory used in the algorithm, and then call `solve!`:
 
@@ -18,8 +18,8 @@ For advanced usage, first define a `SR2Solver` to preallocate the memory used in
 - `atol::T = √eps(T)`: absolute tolerance.
 - `rtol::T = √eps(T)`: relative tolerance: algorithm stops when ‖∇f(xᵏ)‖ ≤ atol + rtol * ‖∇f(x⁰)‖.
 - `η1 = eps(T)^(1/4)`, `η2 = T(0.95)`: step acceptance parameters.
-- `γ1 = T(1/2)`, `γ2 = 1/γ1`: regularization update parameters.
-- `σmin = eps(T)`: step parameter for SR2 algorithm.
+- `γ1 = T(1/2)`, `γ2 = 1/γ1`: regularization update parameters. #TODO   we can use λ but here we only need γ1
+- `μmin = eps(T)`: step parameter for SR2 algorithm.
 - `max_eval::Int = -1`: maximum number of evaluation of the objective function.
 - `max_time::Float64 = 30.0`: maximum time limit in seconds.
 - `max_iter::Int = typemax(Int)`: maximum number of iterations.
@@ -72,7 +72,7 @@ mutable struct SR2Solver{T, V} <: AbstractOptimizationSolver
   gx::V
   cx::V
   d::V   # used for momentum term
-  σ::T
+  μ::T
 end
 
 function SR2Solver(nlp::AbstractNLPModel{T, V}) where {T, V}
@@ -80,8 +80,8 @@ function SR2Solver(nlp::AbstractNLPModel{T, V}) where {T, V}
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
   d = fill!(similar(nlp.meta.x0), 0)
-  σ = zero(T) # init it to zero for now 
-  return SR2Solver{T, V}(x, gx, cx, d, σ)
+  μ= zero(T) # init it to zero for now 
+  return SR2Solver{T, V}(x, gx, cx, d, μ)
 end
 
 @doc (@doc SR2Solver) function SR2(nlp::AbstractNLPModel{T, V}; kwargs...) where {T, V}
@@ -107,7 +107,7 @@ function SolverCore.solve!(
   η2 = T(0.95),
   γ1 = T(1 / 2),
   γ2 = 1 / γ1,
-  σmin = zero(T),
+  μmin = zero(T),
   max_time::Float64 = 30.0,
   max_eval::Int = -1,
   max_iter::Int = typemax(Int),
@@ -124,7 +124,7 @@ function SolverCore.solve!(
   ∇fk = solver.gx
   ck = solver.cx
   d = solver.d
-  σk = solver.σ
+  μk = solver.μ
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
@@ -133,18 +133,18 @@ function SolverCore.solve!(
   norm_∇fk = norm(∇fk)
   set_dual_residual!(stats, norm_∇fk)
 
-  σk = 2^round(log2(norm_∇fk + 1))
+  μk = 2^round(log2(norm_∇fk + 1))
   # Stopping criterion: 
   ϵ = atol + rtol * norm_∇fk
   optimal = norm_∇fk ≤ ϵ
   if optimal
     @info("Optimal point found at initial point")
-    @info @sprintf "%5s  %9s  %7s  %7s " "iter" "f" "‖∇f‖" "σ"
-    @info @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk σk
+    @info @sprintf "%5s  %9s  %7s  %7s " "iter" "f" "‖∇f‖" "μ"
+    @info @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk
   end
   if verbose > 0 && mod(stats.iter, verbose) == 0
-    @info @sprintf "%5s  %9s  %7s  %7s " "iter" "f" "‖∇f‖" "σ"
-    infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk σk
+    @info @sprintf "%5s  %9s  %7s  %7s " "iter" "f" "‖∇f‖" "μ"
+    infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk
   end
 
   set_status!(
@@ -160,21 +160,40 @@ function SolverCore.solve!(
     ),
   )
 
-  solver.σ = σk
+  solver.μ= μk
   callback(nlp, solver, stats)
-  σk = solver.σ
+  μk = solver.μ
 
   done = stats.status != :unknown
 
   while !done
+    # unlike R2 since our data is stochastic we need to recompute the gradient and objective and not used the passed 
+    set_objective!(stats, obj(nlp, x))
+    grad!(nlp, x, ∇fk)
+    norm_∇fk = norm(∇fk)
+    # # TODO can we have it here?
+    set_dual_residual!(stats, norm_∇fk)
+    # optimal = norm_∇fk ≤ ϵ #todo we need to check
+    # we will be slower but more accurate  and no need to do them in the callback 
+    
+    σk = μk * norm_∇fk # this is different from R2
+
+
+    if verbose > 0 && mod(stats.iter, verbose) == 0
+      @info infoline
+      infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk
+    end
+
     if β == 0
       ck .= x .- (∇fk ./ σk)
-    else
+    else # momentum term
       d .= ∇fk .* (T(1) - β) .+ d .* β
       ck .= x .- (d ./ σk)
     end
-    ΔTk = norm_∇fk^2 / σk
+
+    ΔTk = norm_∇fk^2 / σk #TODO confirm if 1/2 is missing here ?
     fck = obj(nlp, ck)
+
     if fck == -Inf
       set_status!(stats, :unbounded)
       break
@@ -183,29 +202,33 @@ function SolverCore.solve!(
     ρk = (stats.objective - fck) / ΔTk
 
     # Update regularization parameters
-    if ρk >= η2
-      σk = max(σmin, γ1 * σk)
-    elseif ρk < η1
-      σk = σk * γ2
+    if ρk >= η1 && σk >= η2
+      μk = max(μmin,  μk * γ2 )
+    else
+      μk = μk * γ1  
     end
 
     # Acceptance of the new candidate
-    if ρk >= η1
+    if ρk >= η1 && σk >= η2  # if we move the μ^-1 to the left side 
       x .= ck
-      set_objective!(stats, fck)
-      grad!(nlp, x, ∇fk)
-      norm_∇fk = norm(∇fk)
+      #TODO no need of them ?
+      # set_objective!(stats, fck)
+      # grad!(nlp, x, ∇fk)
+      # norm_∇fk = norm(∇fk)
     end
+    # TODO we do not need to compute them here
+    # set_dual_residual!(stats, norm_∇fk)
+    # optimal = norm_∇fk ≤ ϵ #todo we need to check TODO we do not need it in stochastic since may optimal happen but we still need to continue
 
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
-    set_dual_residual!(stats, norm_∇fk)
-    optimal = norm_∇fk ≤ ϵ
 
-    if verbose > 0 && mod(stats.iter, verbose) == 0
-      @info infoline
-      infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk σk
-    end
+
+    # #TODO this is not accurate now 
+    # if verbose > 0 && mod(stats.iter, verbose) == 0
+    #   @info infoline
+    #   infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk
+    # end
 
     set_status!(
       stats,
@@ -219,9 +242,9 @@ function SolverCore.solve!(
         max_time = max_time,
       ),
     )
-    solver.σ = σk
+    solver.μ= μk
     callback(nlp, solver, stats)
-    σk = solver.σ
+    # μk = solver.μ
 
     done = stats.status != :unknown
   end

@@ -22,6 +22,7 @@ This package provides an implementation of four classic algorithms for unconstra
 
 - `lbfgs`: an implementation of a limited-memory BFGS line-search method for unconstrained minimization;
 - `R2`: a first-order quadratic regularization method for unconstrained optimization;
+- `SR2`: a stochastic version of the first-order quadratic regularization method for unconstrained optimization;
 - `tron`: a pure Julia implementation of TRON, a trust-region solver for bound-constrained optimization described in
 
     >  Chih-Jen Lin and Jorge J. Moré, *Newton's Method for Large Bound-Constrained

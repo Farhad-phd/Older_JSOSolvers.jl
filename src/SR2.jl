@@ -107,7 +107,7 @@ function SolverCore.solve!(
   η2 = T(0.95),
   γ1 = T(1 / 2),
   γ2 = 1 / γ1,
-  μmin = zero(T),
+  σmin = zero(T),
   max_time::Float64 = 30.0,
   max_eval::Int = -1,
   max_iter::Int = typemax(Int),
@@ -115,6 +115,8 @@ function SolverCore.solve!(
   verbose::Int = 0,
 ) where {T, V}
   unconstrained(nlp) || error("SR2 should only be called on unconstrained problems.")
+  
+  μmin = σmin # we only add this so it matches the R2 
 
   reset!(stats)
   start_time = time()

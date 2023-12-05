@@ -19,7 +19,7 @@ For advanced usage, first define a `SR2Solver` to preallocate the memory used in
 - `rtol::T = √eps(T)`: relative tolerance: algorithm stops when ‖∇f(xᵏ)‖ ≤ atol + rtol * ‖∇f(x⁰)‖.
 - `η1 = eps(T)^(1/4)`, `η2 = T(0.95)`: step acceptance parameters.
 - `γ1 = T(1/2)`, `γ2 = 1/γ1`: regularization update parameters. #TODO   we can use λ but here we only need γ1
-- `μmin = eps(T)`: step parameter for SR2 algorithm.
+- `σmin = eps(T)`: step parameter for SR2 algorithm.
 - `max_eval::Int = -1`: maximum number of evaluation of the objective function.
 - `max_time::Float64 = 30.0`: maximum time limit in seconds.
 - `max_iter::Int = typemax(Int)`: maximum number of iterations.
@@ -72,7 +72,7 @@ mutable struct SR2Solver{T, V} <: AbstractOptimizationSolver
   gx::V
   cx::V
   d::V   # used for momentum term
-  μ::T
+  σ::T
 end
 
 function SR2Solver(nlp::AbstractNLPModel{T, V}) where {T, V}
@@ -80,8 +80,8 @@ function SR2Solver(nlp::AbstractNLPModel{T, V}) where {T, V}
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
   d = fill!(similar(nlp.meta.x0), 0)
-  μ= zero(T) # init it to zero for now 
-  return SR2Solver{T, V}(x, gx, cx, d, μ)
+  σ= zero(T) # init it to zero for now 
+  return SR2Solver{T, V}(x, gx, cx, d, σ)
 end
 
 @doc (@doc SR2Solver) function SR2(nlp::AbstractNLPModel{T, V}; kwargs...) where {T, V}
@@ -126,7 +126,7 @@ function SolverCore.solve!(
   ∇fk = solver.gx
   ck = solver.cx
   d = solver.d
-  μk = solver.μ
+  # μk = solver.σ #initilize it to zero for now, μk = σk^-1 * norm_∇fk
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
@@ -135,7 +135,7 @@ function SolverCore.solve!(
   norm_∇fk = norm(∇fk)
   set_dual_residual!(stats, norm_∇fk)
 
-  μk = 2^round(log2(norm_∇fk + 1))
+  # μk = 2^round(log2(norm_∇fk + 1)) #TODO checking if this has any effect 
   # Stopping criterion: 
   ϵ = atol + rtol * norm_∇fk
   optimal = norm_∇fk ≤ ϵ
@@ -162,9 +162,9 @@ function SolverCore.solve!(
     ),
   )
 
-  solver.μ= μk
+  solver.σ=  μk * norm_∇fk
   callback(nlp, solver, stats)
-  μk = solver.μ
+  
 
   done = stats.status != :unknown
 
@@ -177,7 +177,6 @@ function SolverCore.solve!(
     # optimal = norm_∇fk ≤ ϵ #todo we need to check
     # we will be slower but more accurate  and no need to do them in the callback 
     
-    σk = μk * norm_∇fk # this is different from R2
 
     if β == 0
       ck .= x .- (∇fk ./ σk)
@@ -211,6 +210,7 @@ function SolverCore.solve!(
     set_time!(stats, time() - start_time)
     set_dual_residual!(stats, norm_∇fk)
     optimal = norm_∇fk ≤ ϵ
+    σk = μk * norm_∇fk # this is different from R2
 
     
     if verbose > 0 && mod(stats.iter, verbose) == 0
@@ -230,7 +230,7 @@ function SolverCore.solve!(
         max_time = max_time,
       ),
     )
-    solver.μ= μk
+    solver.σ= σk
     callback(nlp, solver, stats)
 
     done = stats.status != :unknown

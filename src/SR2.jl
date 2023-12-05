@@ -162,9 +162,9 @@ function SolverCore.solve!(
     ),
   )
 
-  solver.σ=  μk * norm_∇fk
+  σk=  μk * norm_∇fk
+  solver.σ=  σk 
   callback(nlp, solver, stats)
-  
 
   done = stats.status != :unknown
 

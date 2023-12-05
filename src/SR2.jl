@@ -169,21 +169,15 @@ function SolverCore.solve!(
   done = stats.status != :unknown
 
   while !done
-    # unlike R2 since our data is stochastic we need to recompute the gradient and objective and not used the passed 
-    set_objective!(stats, obj(nlp, x))
-    grad!(nlp, x, ∇fk)
-    norm_∇fk = norm(∇fk)
-    set_dual_residual!(stats, norm_∇fk)
+    #TODO unlike R2 since our data is stochastic we need to recompute the gradient and objective and not used the passed 
+    # set_objective!(stats, obj(nlp, x))
+    # grad!(nlp, x, ∇fk)
+    # norm_∇fk = norm(∇fk)
+    # set_dual_residual!(stats, norm_∇fk)
     # optimal = norm_∇fk ≤ ϵ #todo we need to check
     # we will be slower but more accurate  and no need to do them in the callback 
     
     σk = μk * norm_∇fk # this is different from R2
-
-
-    if verbose > 0 && mod(stats.iter, verbose) == 0
-      @info infoline
-      infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk
-    end
 
     if β == 0
       ck .= x .- (∇fk ./ σk)
@@ -205,6 +199,9 @@ function SolverCore.solve!(
     # Update regularization parameters and Acceptance of the new candidate
     if ρk >= η1 && σk >= η2  # if we move the μ^-1 to the left side 
       x .= ck
+      set_objective!(stats, fck)
+      grad!(nlp, x, ∇fk)
+      norm_∇fk = norm(∇fk)
       μk = max(μmin,  μk * γ2 )
     else
       μk = μk * γ1 
@@ -212,8 +209,14 @@ function SolverCore.solve!(
 
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
-    # set_dual_residual!(stats, norm_∇fk)
-    # optimal = norm_∇fk ≤ ϵ
+    set_dual_residual!(stats, norm_∇fk)
+    optimal = norm_∇fk ≤ ϵ
+
+    
+    if verbose > 0 && mod(stats.iter, verbose) == 0
+      @info infoline
+      infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk
+    end
 
     set_status!(
       stats,

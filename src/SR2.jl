@@ -126,7 +126,7 @@ function SolverCore.solve!(
   ∇fk = solver.gx
   ck = solver.cx
   d = solver.d
-  μk = solver.σ #initilize it to zero for now, μk = σk^-1 * norm_∇fk
+  σk = solver.σ 
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
@@ -135,7 +135,9 @@ function SolverCore.solve!(
   norm_∇fk = norm(∇fk)
   set_dual_residual!(stats, norm_∇fk)
 
-  # μk = 2^round(log2(norm_∇fk + 1)) #TODO checking if this has any effect 
+  μk = 2^round(log2(norm_∇fk + 1)) / norm_∇fk #TODO checking if this has any effect 
+  σk=  μk * norm_∇fk
+
   # Stopping criterion: 
   ϵ = atol + rtol * norm_∇fk
   optimal = norm_∇fk ≤ ϵ
@@ -162,9 +164,9 @@ function SolverCore.solve!(
     ),
   )
 
-  σk=  μk * norm_∇fk
   solver.σ=  σk 
   callback(nlp, solver, stats)
+  σk = solver.σ
 
   done = stats.status != :unknown
 
@@ -197,13 +199,13 @@ function SolverCore.solve!(
 
     # Update regularization parameters and Acceptance of the new candidate
     if ρk >= η1 && σk >= η2  # if we move the μ^-1 to the left side 
+      μk = max(σmin,  μk * γ1 )
       x .= ck
       set_objective!(stats, fck)
       grad!(nlp, x, ∇fk)
       norm_∇fk = norm(∇fk)
-      μk = max(μmin,  μk * γ2 )
     else
-      μk = μk * γ1 
+      μk = μk * γ2 
     end
 
     set_iter!(stats, stats.iter + 1)
@@ -232,6 +234,7 @@ function SolverCore.solve!(
     )
     solver.σ= σk
     callback(nlp, solver, stats)
+    σk = solver.σ
 
     done = stats.status != :unknown
   end

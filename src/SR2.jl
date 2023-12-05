@@ -126,7 +126,7 @@ function SolverCore.solve!(
   ∇fk = solver.gx
   ck = solver.cx
   d = solver.d
-  # μk = solver.σ #initilize it to zero for now, μk = σk^-1 * norm_∇fk
+  μk = solver.σ #initilize it to zero for now, μk = σk^-1 * norm_∇fk
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))

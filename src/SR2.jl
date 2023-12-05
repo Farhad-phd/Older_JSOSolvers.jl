@@ -172,9 +172,9 @@ function SolverCore.solve!(
 
   while !done
     #TODO unlike R2 since our data is stochastic we need to recompute the gradient and objective and not used the passed 
-    # set_objective!(stats, obj(nlp, x))
-    # grad!(nlp, x, ∇fk)
-    # norm_∇fk = norm(∇fk)
+    set_objective!(stats, obj(nlp, x)) #TODO confirm with Prof.Orban
+    grad!(nlp, x, ∇fk)
+    norm_∇fk = norm(∇fk)
     # set_dual_residual!(stats, norm_∇fk)
     # optimal = norm_∇fk ≤ ϵ #todo we need to check
     # we will be slower but more accurate  and no need to do them in the callback 

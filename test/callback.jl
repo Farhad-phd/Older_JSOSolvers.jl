@@ -18,6 +18,11 @@ using ADNLPModels, JSOSolvers, LinearAlgebra, Logging #, Plots
   @test stats.iter == 8
 
   stats = with_logger(NullLogger()) do
+    iR2(nlp, callback = cb)
+  end
+  @test stats.iter == 8
+
+  stats = with_logger(NullLogger()) do
     lbfgs(nlp, callback = cb)
   end
   @test stats.iter == 8
@@ -64,5 +69,9 @@ end
   end
   stats = with_logger(NullLogger()) do
     R2(nlp, callback = cb)
+  end
+  
+  stats = with_logger(NullLogger()) do
+    iR2(nlp, callback = cb)
   end
 end

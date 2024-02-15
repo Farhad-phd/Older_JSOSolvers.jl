@@ -10,7 +10,7 @@ function consistency()
   @testset "Consistency" begin
     args = Pair{Symbol, Number}[:atol => 1e-6, :rtol => 1e-6, :max_eval => 20000, :max_time => 60.0]
 
-    @testset "NLP with $mtd" for mtd in [trunk, lbfgs, tron, R2]
+    @testset "NLP with $mtd" for mtd in [trunk, lbfgs, tron, R2,iR2]
       with_logger(NullLogger()) do
         stats = mtd(unlp; args...)
         @test stats isa GenericExecutionStats
@@ -27,7 +27,7 @@ function consistency()
       end
     end
 
-    @testset "Quasi-Newton NLP with $mtd" for mtd in [trunk, lbfgs, tron, R2]
+    @testset "Quasi-Newton NLP with $mtd" for mtd in [trunk, lbfgs, tron, R2,iR2]
       with_logger(NullLogger()) do
         reset!(qnlp)
         stats = mtd(qnlp; args...)

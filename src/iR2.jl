@@ -201,6 +201,7 @@ function SolverCore.solve!(
       σ_stat = step_accepted ? "↘" : "↗"
       infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat
     end
+    
     callback(nlp, solver, stats)
     #since our mini-batch may have changed the values of the gradient, we need to recompute it
     set_objective!(stats, obj(nlp, x))

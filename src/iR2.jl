@@ -177,7 +177,7 @@ function SolverCore.solve!(
       ck .= x .- (d ./ σk)
     end
 
-    ΔTk = norm_∇fk * μk
+    ΔTk = norm_∇fk / μk
     fck = obj(nlp, ck)
 
     if fck == -Inf
@@ -188,29 +188,31 @@ function SolverCore.solve!(
     ρk = (stats.objective - fck) / ΔTk
 
     # Update regularization parameters and Acceptance of the new candidate
-    if ρk >= η1 &&  norm_∇fk >= η2/μk # TODO if we move the μ^-1 to the left side 
+    step_accepted = ρk >= η1 && σk >= η2
+    if step_accepted 
       μk = max(μmin,  μk / λ )
       x .= ck
-      set_objective!(stats, obj(nlp, x))
-      grad!(nlp, x, ∇fk)
-      norm_∇fk = norm(∇fk)
     else
       μk = μk * λ
     end
 
-    set_iter!(stats, stats.iter + 1)
-    set_time!(stats, time() - start_time)
-    set_dual_residual!(stats, norm_∇fk)
-    optimal = norm_∇fk ≤ ϵ
-
-    σk = μk * norm_∇fk 
-    solver.σ = σk 
-
     if verbose > 0 && mod(stats.iter, verbose) == 0
       @info infoline
-      σ_stat = (ρk >= η1 &&  norm_∇fk >= η2/μk) ? "↘" : "↗" 
+      σ_stat = step_accepted ? "↘" : "↗"
       infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat
     end
+    callback(nlp, solver, stats)
+    #since our mini-batch may have changed the values of the gradient, we need to recompute it
+    set_objective!(stats, obj(nlp, x))
+    grad!(nlp, x, ∇fk)
+    norm_∇fk = norm(∇fk)
+    set_dual_residual!(stats, norm_∇fk)
+    σk =  μk * norm_∇fk
+    solver.σ = σk
+
+    set_iter!(stats, stats.iter + 1)
+    set_time!(stats, time() - start_time)
+    optimal = norm_∇fk ≤ ϵ
 
     set_status!(
       stats,
@@ -224,16 +226,9 @@ function SolverCore.solve!(
         max_time = max_time,
       ),
     )
-    callback(nlp, solver, stats)
-    #since our mini-batch may have changed the values of the gradient, we need to recompute it
-    set_objective!(stats, obj(nlp, x))
-    grad!(nlp, x, ∇fk)
-    norm_∇fk = norm(∇fk)
-    σk =  μk * norm_∇fk 
 
     done = stats.status != :unknown
   end
-
   set_solution!(stats, x)
   return stats
 end

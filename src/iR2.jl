@@ -1,5 +1,6 @@
 export iR2, iR2Solver
 
+#DM: what does iR2 stands for ?
 """
     iR2(nlp; kwargs...)
 
@@ -132,7 +133,7 @@ function SolverCore.solve!(
   norm_∇fk = norm(∇fk)
   set_dual_residual!(stats, norm_∇fk)
 
-  μk = 2^round(log2(norm_∇fk + 1)) / norm_∇fk #TODO confirm if this is the correct initialization
+  μk = 2^round(log2(norm_∇fk + 1)) / norm_∇fk #TODO confirm if this is the correct initialization DM: Looks ok to me
   σk=  μk * norm_∇fk
 
   # Stopping criterion: 
@@ -173,12 +174,15 @@ function SolverCore.solve!(
     grad!(nlp, x, ∇fk)
     norm_∇fk = norm(∇fk)
     σk =  μk * norm_∇fk # TODO Prof. Orban, do we need to update σk here (since the norm is different in for example deep learning models)
+    #DM: you can update here, the main thing is having it up to date whenever it is used.
     #TODO prof. Orban, do we need to update the dual residual here?
     # set_dual_residual!(stats, norm_∇fk)
     # optimal = norm_∇fk ≤ ϵ #todo we need to check
     # we will be slower but more accurate  and no need to do them in the callback 
+    #DM: I would suggest to update the dual residual with an upper bound on the norm of the gradient that you can derive from the error bound on the gradient (if available).
     
     #TODO rewrite the following to use the momentum term
+    #DM: what's wrong with the if block below ?
     if β == 0
       ck .= x .- (∇fk ./ σk)
     else # momentum term
@@ -187,6 +191,7 @@ function SolverCore.solve!(
     end
 
     ΔTk = norm_∇fk * μk #TODO OR  ΔTk = norm_∇fk^2 / σk  ?  Prof. Orban
+    #DM: you will have the answer once you are sure about the convergence analysis you wrote in the draft.
     fck = obj(nlp, ck)
 
     if fck == -Inf
@@ -195,9 +200,10 @@ function SolverCore.solve!(
     end
 
     ρk = (stats.objective - fck) / ΔTk
+    #DM:ρk is consistent with your algorithm (as in the report), however you might want to consider ρk = (obj(nlp,xk) - fck) / ΔTk in mini-batch context to stabilize the algorithm. 
 
     # Update regularization parameters and Acceptance of the new candidate
-    if ρk >= η1 && σk >= η2  # TODO if we move the μ^-1 to the left side 
+    if ρk >= η1 && σk >= η2  # TODO if we move the μ^-1 to the left side DM: I do not undertand
       μk = max(σmin,  μk / λ )
       x .= ck
       set_objective!(stats, fck)
@@ -213,6 +219,7 @@ function SolverCore.solve!(
     optimal = norm_∇fk ≤ ϵ
     
     σk = μk * norm_∇fk # this is different from R2  #TODO Prof. Orban, do we need to update σk here or at the begining of the loop or both places ?
+    #DM: Looks to me it is enough to update it at the beginning of the loop
 
 
     

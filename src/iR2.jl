@@ -123,7 +123,7 @@ function SolverCore.solve!(
   ∇fk = solver.gx
   ck = solver.cx
   d = solver.d
-  σk = solver.σ 
+  solver.σ = solver.σ 
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
@@ -133,7 +133,7 @@ function SolverCore.solve!(
   set_dual_residual!(stats, norm_∇fk)
 
   μk = 2^round(log2(norm_∇fk + 1)) / norm_∇fk #TODO confirm if this is the correct initialization
-  σk=  μk * norm_∇fk
+  solver.σ=  μk * norm_∇fk
 
   # Stopping criterion: 
   ϵ = atol + rtol * norm_∇fk
@@ -161,9 +161,7 @@ function SolverCore.solve!(
     ),
   )
 
-  solver.σ =  σk 
   callback(nlp, solver, stats)
-  σk = solver.σ #TODO do I need this here?
 
   done = stats.status != :unknown
 
@@ -172,7 +170,7 @@ function SolverCore.solve!(
     set_objective!(stats, obj(nlp, x)) #TODO confirm with Prof.Orban
     grad!(nlp, x, ∇fk)
     norm_∇fk = norm(∇fk)
-    σk =  μk * norm_∇fk # TODO Prof. Orban, do we need to update σk here (since the norm is different in for example deep learning models)
+    solver.σ =  μk * norm_∇fk # TODO Prof. Orban, do we need to update solver.σ here (since the norm is different in for example deep learning models)
     #TODO prof. Orban, do we need to update the dual residual here?
     # set_dual_residual!(stats, norm_∇fk)
     # optimal = norm_∇fk ≤ ϵ #todo we need to check
@@ -180,13 +178,13 @@ function SolverCore.solve!(
     
     #TODO rewrite the following to use the momentum term
     if β == 0
-      ck .= x .- (∇fk ./ σk)
+      ck .= x .- (∇fk ./ solver.σ)
     else # momentum term
       d .= ∇fk .* (T(1) - β) .+ d .* β
-      ck .= x .- (d ./ σk)
+      ck .= x .- (d ./ solver.σ)
     end
 
-    ΔTk = norm_∇fk * μk #TODO OR  ΔTk = norm_∇fk^2 / σk  ?  Prof. Orban
+    ΔTk = norm_∇fk * μk #TODO OR  ΔTk = norm_∇fk^2 / solver.σ  ?  Prof. Orban
     fck = obj(nlp, ck)
 
     if fck == -Inf
@@ -197,24 +195,22 @@ function SolverCore.solve!(
     ρk = (stats.objective - fck) / ΔTk
 
     # Update regularization parameters and Acceptance of the new candidate
-    if ρk >= η1 && σk >= η2  # TODO if we move the μ^-1 to the left side 
+    if ρk >= η1 && solver.σ >= η2  # TODO if we move the μ^-1 to the left side 
       μk = max(σmin,  μk / λ )
       x .= ck
       set_objective!(stats, fck)
       grad!(nlp, x, ∇fk)
       norm_∇fk = norm(∇fk)
+      set_dual_residual!(stats, norm_∇fk)
     else
       μk = μk * λ
     end
 
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
-    set_dual_residual!(stats, norm_∇fk)
     optimal = norm_∇fk ≤ ϵ
     
-    σk = μk * norm_∇fk # this is different from R2  #TODO Prof. Orban, do we need to update σk here or at the begining of the loop or both places ?
-
-
+    solver.σ = μk * norm_∇fk 
     
     if verbose > 0 && mod(stats.iter, verbose) == 0
       @info infoline
@@ -233,9 +229,7 @@ function SolverCore.solve!(
         max_time = max_time,
       ),
     )
-    solver.σ= σk
     callback(nlp, solver, stats)
-    σk = solver.σ
 
     done = stats.status != :unknown
   end

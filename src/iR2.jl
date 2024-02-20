@@ -3,7 +3,7 @@ export iR2, iR2Solver
 """
     iR2(nlp; kwargs...)
 
-A stochastic first-order quadratic regularization method for unconstrained optimization.
+An inexact stochastic first-order quadratic regularization method for unconstrained optimization.
 
 For advanced usage, first define a `iR2Solver` to preallocate the memory used in the algorithm, and then call `solve!`:
 
@@ -167,7 +167,7 @@ function SolverCore.solve!(
 
   while !done
     #TODO unlike R2 since our data is stochastic we need to recompute the gradient and objective and not used the passed 
-    set_objective!(stats, obj(nlp, x)) #TODO confirm with Prof.Orban
+    set_objective!(stats, obj(nlp, x))
     grad!(nlp, x, ∇fk)
     norm_∇fk = norm(∇fk)
     solver.σ =  μk * norm_∇fk # TODO Prof. Orban, do we need to update solver.σ here (since the norm is different in for example deep learning models)
@@ -184,7 +184,7 @@ function SolverCore.solve!(
       ck .= x .- (d ./ solver.σ)
     end
 
-    ΔTk = norm_∇fk * μk #TODO OR  ΔTk = norm_∇fk^2 / solver.σ  ?  Prof. Orban
+    ΔTk = norm_∇fk * μk
     fck = obj(nlp, ck)
 
     if fck == -Inf
@@ -211,7 +211,7 @@ function SolverCore.solve!(
     optimal = norm_∇fk ≤ ϵ
     
     solver.σ = μk * norm_∇fk 
-    
+
     if verbose > 0 && mod(stats.iter, verbose) == 0
       @info infoline
       infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk

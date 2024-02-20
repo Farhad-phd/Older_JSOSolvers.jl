@@ -104,7 +104,7 @@ function SolverCore.solve!(
   atol::T = √eps(T),
   rtol::T = √eps(T),
   η1 = eps(T)^(1 / 4),
-  η2 = T(0.95),
+  η2 = T(0.99),
   λ = T(2),
   σmin = zero(T), # μmin = σmin to match the paper
   max_time::Float64 = 30.0,
@@ -118,12 +118,13 @@ function SolverCore.solve!(
   reset!(stats)
   start_time = time()
   set_time!(stats, 0.0)
+  μmin = σmin
 
   x = solver.x .= x
   ∇fk = solver.gx
   ck = solver.cx
   d = solver.d
-  solver.σ = solver.σ 
+  σk = solver.σ 
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
@@ -133,19 +134,20 @@ function SolverCore.solve!(
   set_dual_residual!(stats, norm_∇fk)
 
   μk = 2^round(log2(norm_∇fk + 1)) / norm_∇fk #TODO confirm if this is the correct initialization
-  solver.σ=  μk * norm_∇fk
+  σk =  μk * norm_∇fk
+  ρk = zero(T)
 
   # Stopping criterion: 
   ϵ = atol + rtol * norm_∇fk
   optimal = norm_∇fk ≤ ϵ
   if optimal
     @info("Optimal point found at initial point")
-    @info @sprintf "%5s  %9s  %7s  %7s " "iter" "f" "‖∇f‖" "μ"
-    @info @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk
+    @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
+    @info @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
   end
   if verbose > 0 && mod(stats.iter, verbose) == 0
-    @info @sprintf "%5s  %9s  %7s  %7s " "iter" "f" "‖∇f‖" "μ"
-    infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk
+    @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
+    infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
   end
 
   set_status!(
@@ -161,27 +163,23 @@ function SolverCore.solve!(
     ),
   )
 
+  solver.σ = σk
   callback(nlp, solver, stats)
+  σk = solver.σ
 
   done = stats.status != :unknown
 
   while !done
-    #TODO unlike R2 since our data is stochastic we need to recompute the gradient and objective and not used the passed 
     set_objective!(stats, obj(nlp, x))
     grad!(nlp, x, ∇fk)
     norm_∇fk = norm(∇fk)
-    solver.σ =  μk * norm_∇fk # TODO Prof. Orban, do we need to update solver.σ here (since the norm is different in for example deep learning models)
-    #TODO prof. Orban, do we need to update the dual residual here?
-    # set_dual_residual!(stats, norm_∇fk)
-    # optimal = norm_∇fk ≤ ϵ #todo we need to check
-    # we will be slower but more accurate  and no need to do them in the callback 
+    σk =  μk * norm_∇fk 
     
-    #TODO rewrite the following to use the momentum term
     if β == 0
-      ck .= x .- (∇fk ./ solver.σ)
+      ck .= x .- (∇fk ./ σk)
     else # momentum term
       d .= ∇fk .* (T(1) - β) .+ d .* β
-      ck .= x .- (d ./ solver.σ)
+      ck .= x .- (d ./ σk)
     end
 
     ΔTk = norm_∇fk * μk
@@ -193,10 +191,9 @@ function SolverCore.solve!(
     end
 
     ρk = (stats.objective - fck) / ΔTk
-
     # Update regularization parameters and Acceptance of the new candidate
-    if ρk >= η1 && solver.σ >= η2  # TODO if we move the μ^-1 to the left side 
-      μk = max(σmin,  μk / λ )
+    if ρk >= η1 &&  norm_∇fk >= η2/μk # TODO if we move the μ^-1 to the left side 
+      μk = max(μmin,  μk / λ )
       x .= ck
       set_objective!(stats, fck)
       grad!(nlp, x, ∇fk)
@@ -210,11 +207,13 @@ function SolverCore.solve!(
     set_time!(stats, time() - start_time)
     optimal = norm_∇fk ≤ ϵ
     
-    solver.σ = μk * norm_∇fk 
+    σk = μk * norm_∇fk 
+    solver.σ = σk
 
     if verbose > 0 && mod(stats.iter, verbose) == 0
       @info infoline
-      infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk μk
+      σ_stat = (ρk >= η1 &&  norm_∇fk >= η2/μk) ? "↘" : "↗" 
+      infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat
     end
 
     set_status!(

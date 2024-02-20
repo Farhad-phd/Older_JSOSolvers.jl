@@ -6,7 +6,8 @@ f(x) = (x[1] - 1)^2 + 4 * (x[2] - x[1]^2)^2
 nlp = ADNLPModel(f, [-1.2; 1.0])
 
 stats = GenericExecutionStats(nlp)
-solver = JSOSolvers.iR2(nlp,verbose=1, max_iter=100)
+T= Float64
+solver = JSOSolvers.iR2(nlp,verbose=1, η1 = eps(T)/10 , η2 = T(0.99), λ = T(1.5),max_iter=2000)
 # solver = JSOSolvers.R2(nlp,verbose=1, max_iter=1000)
 # stats = SolverCore.solve!(solver, nlp, stats)
-print(stats.status)
+# print(stats.status)

@@ -164,17 +164,12 @@ function SolverCore.solve!(
   )
 
   solver.σ = σk
-  callback(nlp, solver, stats)
-  σk = solver.σ
+  # callback(nlp, solver, stats)
+  # σk = solver.σ
 
   done = stats.status != :unknown
 
   while !done
-    set_objective!(stats, obj(nlp, x))
-    grad!(nlp, x, ∇fk)
-    norm_∇fk = norm(∇fk)
-    σk =  μk * norm_∇fk 
-    
     if β == 0
       ck .= x .- (∇fk ./ σk)
     else # momentum term
@@ -191,24 +186,25 @@ function SolverCore.solve!(
     end
 
     ρk = (stats.objective - fck) / ΔTk
+
     # Update regularization parameters and Acceptance of the new candidate
     if ρk >= η1 &&  norm_∇fk >= η2/μk # TODO if we move the μ^-1 to the left side 
       μk = max(μmin,  μk / λ )
       x .= ck
-      set_objective!(stats, fck)
+      set_objective!(stats, obj(nlp, x))
       grad!(nlp, x, ∇fk)
       norm_∇fk = norm(∇fk)
-      set_dual_residual!(stats, norm_∇fk)
     else
       μk = μk * λ
     end
 
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
+    set_dual_residual!(stats, norm_∇fk)
     optimal = norm_∇fk ≤ ϵ
-    
+
     σk = μk * norm_∇fk 
-    solver.σ = σk
+    solver.σ = σk 
 
     if verbose > 0 && mod(stats.iter, verbose) == 0
       @info infoline
@@ -229,6 +225,11 @@ function SolverCore.solve!(
       ),
     )
     callback(nlp, solver, stats)
+    #since our mini-batch may have changed the values of the gradient, we need to recompute it
+    set_objective!(stats, obj(nlp, x))
+    grad!(nlp, x, ∇fk)
+    norm_∇fk = norm(∇fk)
+    σk =  μk * norm_∇fk 
 
     done = stats.status != :unknown
   end

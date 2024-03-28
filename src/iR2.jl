@@ -80,7 +80,7 @@ function iR2Solver(nlp::AbstractNLPModel{T, V}) where {T, V}
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
   d = fill!(similar(nlp.meta.x0), 0)
-  σ= zero(T) # init it to zero for now 
+  σ = zero(T) # init it to zero for now 
   return iR2Solver{T, V}(x, gx, cx, d, σ)
 end
 
@@ -114,7 +114,7 @@ function SolverCore.solve!(
   verbose::Int = 0,
 ) where {T, V}
   unconstrained(nlp) || error("iR2 should only be called on unconstrained problems.")
-  
+
   reset!(stats)
   start_time = time()
   set_time!(stats, 0.0)
@@ -124,7 +124,7 @@ function SolverCore.solve!(
   ∇fk = solver.gx
   ck = solver.cx
   d = solver.d
-  σk = solver.σ 
+  σk = solver.σ
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
@@ -134,7 +134,7 @@ function SolverCore.solve!(
   set_dual_residual!(stats, norm_∇fk)
 
   μk = 2^round(log2(norm_∇fk + 1)) / norm_∇fk #TODO confirm if this is the correct initialization
-  σk =  μk * norm_∇fk
+  σk = μk * norm_∇fk
   ρk = zero(T)
 
   # Stopping criterion: 
@@ -147,7 +147,8 @@ function SolverCore.solve!(
   end
   if verbose > 0 && mod(stats.iter, verbose) == 0
     @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
-    infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
+    infoline =
+      @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
   end
 
   set_status!(
@@ -189,8 +190,8 @@ function SolverCore.solve!(
 
     # Update regularization parameters and Acceptance of the new candidate
     step_accepted = ρk >= η1 && σk >= η2
-    if step_accepted 
-      μk = max(μmin,  μk / λ )
+    if step_accepted
+      μk = max(μmin, μk / λ)
       x .= ck
     else
       μk = μk * λ
@@ -199,34 +200,40 @@ function SolverCore.solve!(
     if verbose > 0 && mod(stats.iter, verbose) == 0
       @info infoline
       σ_stat = step_accepted ? "↘" : "↗"
-      infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat
+      infoline =
+        @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat
     end
-    
+
     callback(nlp, solver, stats)
     #since our mini-batch may have changed the values of the gradient, we need to recompute it
     set_objective!(stats, obj(nlp, x))
     grad!(nlp, x, ∇fk)
     norm_∇fk = norm(∇fk)
     set_dual_residual!(stats, norm_∇fk)
-    σk =  μk * norm_∇fk
+    σk = μk * norm_∇fk
     solver.σ = σk
 
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
     optimal = norm_∇fk ≤ ϵ
 
-    set_status!(
-      stats,
-      get_status(
-        nlp,
-        elapsed_time = stats.elapsed_time,
-        optimal = optimal,
-        max_eval = max_eval,
-        iter = stats.iter,
-        max_iter = max_iter,
-        max_time = max_time,
-      ),
-    )
+    #Since the user can force the status to be something else, we need to check if the user has stopped the algorithm
+    if stats.status == :first_order #this is what user set in their callback
+      set_status!(stats, :first_order)
+    else
+      set_status!(
+        stats,
+        get_status(
+          nlp,
+          elapsed_time = stats.elapsed_time,
+          optimal = optimal,
+          max_eval = max_eval,
+          iter = stats.iter,
+          max_iter = max_iter,
+          max_time = max_time,
+        ),
+      )
+    end
 
     done = stats.status != :unknown
   end

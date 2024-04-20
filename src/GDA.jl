@@ -165,7 +165,7 @@ function SolverCore.solve!(
   done = stats.status != :unknown
 
   while !done
-    x .= x .- ∇fk    
+    x .= x .- 0.01 * ∇fk    
     if verbose > 0 && mod(stats.iter, verbose) == 0
       @info infoline
       infoline =

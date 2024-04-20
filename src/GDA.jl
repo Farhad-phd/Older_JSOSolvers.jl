@@ -1,13 +1,14 @@
-export iR2, iR2Solver
+export GDA, GDASolver
 
 """
-    iR2(nlp; kwargs...)
+    GDA(nlp; kwargs...)
 
-An inexact stochastic first-order quadratic regularization method for unconstrained optimization.
+An Gradient Descent Algorithm (GDA) method for unconstrained optimization.
 
-For advanced usage, first define a `iR2Solver` to preallocate the memory used in the algorithm, and then call `solve!`:
 
-    solver = iR2Solver(nlp)
+For advanced usage, first define a `GDASolver` to preallocate the memory used in the algorithm, and then call `solve!`:
+
+    solver = GDASolver(nlp)
     solve!(solver, nlp; kwargs...)
 
 # Arguments
@@ -19,11 +20,11 @@ For advanced usage, first define a `iR2Solver` to preallocate the memory used in
 - `rtol::T = √eps(T)`: relative tolerance: algorithm stops when ‖∇f(xᵏ)‖ ≤ atol + rtol * ‖∇f(x⁰)‖.
 - `η1 = eps(T)^(1/4)`, `η2 = T(0.95)`: step acceptance parameters.
 - `λ = T(2)`, λ > 1 regularization update parameters. 
-- `σmin = eps(T)`: step parameter for iR2 algorithm.
+- `σmin = eps(T)`: step parameter for GDA algorithm.
 - `max_eval::Int = -1`: maximum number of evaluation of the objective function.
 - `max_time::Float64 = 30.0`: maximum time limit in seconds.
 - `max_iter::Int = typemax(Int)`: maximum number of iterations.
-- `β = T(0) ∈ [0,1]` is the constant in the momentum term. If `β == 0`, iR2 does not use momentum.
+- `β = T(0) ∈ [0,1]` is the constant in the momentum term. If `β == 0`, GDA does not use momentum.
 - `verbose::Int = 0`: if > 0, display iteration details every `verbose` iteration.
 
 # Output
@@ -49,7 +50,7 @@ Notably, you can access, and modify, the following:
 ```jldoctest
 using JSOSolvers, ADNLPModels
 nlp = ADNLPModel(x -> sum(x.^2), ones(3))
-stats = iR2(nlp)
+stats = GDA(nlp)
 
 # output
 
@@ -59,7 +60,7 @@ stats = iR2(nlp)
 ```jldoctest
 using JSOSolvers, ADNLPModels
 nlp = ADNLPModel(x -> sum(x.^2), ones(3))
-solver = iR2Solver(nlp);
+solver = GDASolver(nlp);
 stats = solve!(solver, nlp)
 
 # output
@@ -67,7 +68,7 @@ stats = solve!(solver, nlp)
 "Execution stats: first-order stationary"
 ```
 """
-mutable struct iR2Solver{T, V} <: AbstractOptimizationSolver
+mutable struct GDASolver{T, V} <: AbstractOptimizationSolver
   x::V
   gx::V
   cx::V
@@ -75,28 +76,28 @@ mutable struct iR2Solver{T, V} <: AbstractOptimizationSolver
   σ::T
 end
 
-function iR2Solver(nlp::AbstractNLPModel{T, V}) where {T, V}
+function GDASolver(nlp::AbstractNLPModel{T, V}) where {T, V}
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
   d = fill!(similar(nlp.meta.x0), 0)
   σ = zero(T) # init it to zero for now 
-  return iR2Solver{T, V}(x, gx, cx, d, σ)
+  return GDASolver{T, V}(x, gx, cx, d, σ)
 end
 
-@doc (@doc iR2Solver) function iR2(nlp::AbstractNLPModel{T, V}; kwargs...) where {T, V}
-  solver = iR2Solver(nlp)
+@doc (@doc GDASolver) function GDA(nlp::AbstractNLPModel{T, V}; kwargs...) where {T, V}
+  solver = GDASolver(nlp)
   return solve!(solver, nlp; kwargs...)
 end
 
-function SolverCore.reset!(solver::iR2Solver{T}) where {T}
+function SolverCore.reset!(solver::GDASolver{T}) where {T}
   solver.d .= zero(T)
   solver
 end
-SolverCore.reset!(solver::iR2Solver, ::AbstractNLPModel) = reset!(solver)
+SolverCore.reset!(solver::GDASolver, ::AbstractNLPModel) = reset!(solver)
 
 function SolverCore.solve!(
-  solver::iR2Solver{T, V},
+  solver::GDASolver{T, V},
   nlp::AbstractNLPModel{T, V},
   stats::GenericExecutionStats{T, V};
   callback = (args...) -> nothing,
@@ -113,7 +114,7 @@ function SolverCore.solve!(
   β::T = T(0),
   verbose::Int = 0,
 ) where {T, V}
-  unconstrained(nlp) || error("iR2 should only be called on unconstrained problems.")
+  unconstrained(nlp) || error("GDA should only be called on unconstrained problems.")
 
   reset!(stats)
   start_time = time()
@@ -122,9 +123,7 @@ function SolverCore.solve!(
 
   x = solver.x .= x
   ∇fk = solver.gx
-  ck = solver.cx
-  d = solver.d
-  σk = solver.σ
+
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
@@ -133,22 +132,19 @@ function SolverCore.solve!(
   norm_∇fk = norm(∇fk)
   set_dual_residual!(stats, norm_∇fk)
 
-  μk = 2^round(log2(norm_∇fk + 1)) / norm_∇fk #TODO confirm if this is the correct initialization
-  σk = μk * norm_∇fk
-  ρk = zero(T)
 
   # Stopping criterion: 
   ϵ = atol + rtol * norm_∇fk
   optimal = norm_∇fk ≤ ϵ
   if optimal
     @info("Optimal point found at initial point")
-    @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
-    @info @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
+    @info @sprintf "%5s  %9s  %7s " "iter" "f" "‖∇f‖"
+    @info @sprintf "%5d  %9.2e  %7.1e  " stats.iter stats.objective norm_∇fk  
   end
   if verbose > 0 && mod(stats.iter, verbose) == 0
-    @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
+    @info @sprintf "%5s  %9s  %7s " "iter" "f" "‖∇f‖"
     infoline =
-      @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
+      @sprintf "%5d  %9.2e  %7.1e  " stats.iter stats.objective norm_∇fk 
   end
 
   set_status!(
@@ -164,44 +160,16 @@ function SolverCore.solve!(
     ),
   )
 
-  solver.σ = σk
-  # callback(nlp, solver, stats)
-  # σk = solver.σ
 
   done = stats.status != :unknown
 
   while !done
-    if β == 0
-      ck .= x .- (∇fk ./ σk)
-    else # momentum term
-      d .= ∇fk .* (T(1) - β) .+ d .* β
-      ck .= x .- (d ./ σk)
-    end
-
-    ΔTk = norm_∇fk / μk
-    fck = obj(nlp, ck)
-
-    if fck == -Inf
-      set_status!(stats, :unbounded)
-      break
-    end
-
-    ρk = (stats.objective - fck) / ΔTk
-
-    # Update regularization parameters and Acceptance of the new candidate
-    step_accepted = ρk >= η1 && σk >= η2
-    if step_accepted
-      μk = max(μmin, μk / λ)
-      x .= ck
-    else
-      μk = μk * λ
-    end
-
+    x .= x .- (∇fk ./ σk)
+   
     if verbose > 0 && mod(stats.iter, verbose) == 0
       @info infoline
-      σ_stat = step_accepted ? "↘" : "↗"
       infoline =
-        @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat
+        @sprintf "%5d  %9.2e  %7.1e" stats.iter stats.objective norm_∇fk 
     end
 
     callback(nlp, solver, stats)
@@ -210,8 +178,6 @@ function SolverCore.solve!(
     grad!(nlp, x, ∇fk)
     norm_∇fk = norm(∇fk)
     set_dual_residual!(stats, norm_∇fk)
-    σk = μk * norm_∇fk
-    solver.σ = σk
 
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
@@ -220,14 +186,13 @@ function SolverCore.solve!(
     #Since the user can force the status to be something else, we need to check if the user has stopped the algorithm
     if stats.status == :first_order #this is what user set in their callback
       set_status!(stats, :first_order)
-      #TODO user has to select the stopping window such as moving average of size 1 is R2 stopping and moving avegrae of 5 is recommended now 
     else
       set_status!(
         stats,
         get_status(
           nlp,
           elapsed_time = stats.elapsed_time,
-          optimal = false, # the user has to set the first order in the callback, we keep it here so if other status happen we put 
+          optimal = false, # the user has to set the first order in the callback
           max_eval = max_eval,
           iter = stats.iter,
           max_iter = max_iter,

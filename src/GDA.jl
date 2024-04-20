@@ -123,8 +123,6 @@ function SolverCore.solve!(
 
   x = solver.x .= x
   ∇fk = solver.gx
-  σk = solver.σ
-
 
 
   set_iter!(stats, 0)
@@ -134,24 +132,20 @@ function SolverCore.solve!(
   norm_∇fk = norm(∇fk)
   set_dual_residual!(stats, norm_∇fk)
 
-  μk = 2^round(log2(norm_∇fk + 1)) / norm_∇fk #TODO confirm if this is the correct initialization
-  σk = μk * norm_∇fk
-  ρk = zero(T)
 
   # Stopping criterion: 
   ϵ = atol + rtol * norm_∇fk
   optimal = norm_∇fk ≤ ϵ
-
   if optimal
-      @info("Optimal point found at initial point")
-      @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
-      @info @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
-    end
-    if verbose > 0 && mod(stats.iter, verbose) == 0
-      @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
-      infoline =
-        @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
-    end
+    @info("Optimal point found at initial point")
+    @info @sprintf "%5s  %9s  %7s " "iter" "f" "‖∇f‖"
+    @info @sprintf "%5d  %9.2e  %7.1e  " stats.iter stats.objective norm_∇fk  
+  end
+  if verbose > 0 && mod(stats.iter, verbose) == 0
+    @info @sprintf "%5s  %9s  %7s " "iter" "f" "‖∇f‖"
+    infoline =
+      @sprintf "%5d  %9.2e  %7.1e  " stats.iter stats.objective norm_∇fk 
+  end
 
   set_status!(
     stats,
@@ -171,35 +165,16 @@ function SolverCore.solve!(
 
   while !done
     x .= x .- (∇fk ./ σk)
-    ΔTk = norm_∇fk / μk
-    fck = obj(nlp, x)
-
-    if fck == -Inf
-      set_status!(stats, :unbounded)
-      break
-    end
-
-    ρk = (stats.objective - fck) / ΔTk
-
-    # Update regularization parameters and Acceptance of the new candidate
-    step_accepted = ρk >= η1 && σk >= η2
-    if step_accepted
-      μk = max(μmin, μk / λ)
-    else
-      μk = μk * λ
-    end
-
+   
     if verbose > 0 && mod(stats.iter, verbose) == 0
       @info infoline
-      σ_stat = step_accepted ? "↘" : "↗"
       infoline =
-        @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat
+        @sprintf "%5d  %9.2e  %7.1e" stats.iter stats.objective norm_∇fk 
     end
-
 
     callback(nlp, solver, stats)
     #since our mini-batch may have changed the values of the gradient, we need to recompute it
-    set_objective!(stats, fck)
+    set_objective!(stats, obj(nlp, x))
     grad!(nlp, x, ∇fk)
     norm_∇fk = norm(∇fk)
     set_dual_residual!(stats, norm_∇fk)

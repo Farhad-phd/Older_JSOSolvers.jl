@@ -153,10 +153,11 @@ function SolverCore.solve!(
 
   set_status!(
     stats,
+    #TODO user has to select the stopping window such as moving average of size 1 is R2 stopping and moving avegrae of 5 is recommended now 
     get_status(
       nlp,
       elapsed_time = stats.elapsed_time,
-      optimal = optimal,
+      optimal = false, # the user has to set the first order in the callback, we keep it here so if other status happen we put 
       max_eval = max_eval,
       iter = stats.iter,
       max_iter = max_iter,

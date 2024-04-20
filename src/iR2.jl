@@ -220,14 +220,13 @@ function SolverCore.solve!(
     #Since the user can force the status to be something else, we need to check if the user has stopped the algorithm
     if stats.status == :first_order #this is what user set in their callback
       set_status!(stats, :first_order)
-      #TODO user has to select the stopping window such as moving average of size 1 is R2 stopping and moving avegrae of 5 is recommended now 
     else
       set_status!(
         stats,
         get_status(
           nlp,
           elapsed_time = stats.elapsed_time,
-          optimal = false, # the user has to set the first order in the callback, we keep it here so if other status happen we put 
+          optimal = optimal,
           max_eval = max_eval,
           iter = stats.iter,
           max_iter = max_iter,

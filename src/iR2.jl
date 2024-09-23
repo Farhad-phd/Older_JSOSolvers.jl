@@ -76,17 +76,17 @@ mutable struct iR2Solver{T, V} <: AbstractOptimizationSolver
   obj_vec::V # used for non-monotone behaviour
 end
 
-function iR2Solver(nlp::AbstractNLPModel{T, V}; monotone_flag = true, non_mono_size=0) where {T, V}
+function iR2Solver(nlp::AbstractNLPModel{T, V}; monotone_flag = true, non_mono_size=5) where {T, V}
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
   d = fill!(similar(nlp.meta.x0), 0)
   σ = zero(T) # init it to zero for now 
   obj_vec = (monotone_flag ?  nothing : fill(zero(T),non_mono_size)) 
-  return iR2Solver{T, V}(x, gx, cx, d, σ,obj_vec)
+  return iR2Solver{T, V}(x, gx, cx, d, σ, obj_vec)
 end
 
-@doc (@doc iR2Solver) function iR2(nlp::AbstractNLPModel{T, V}; monotone_flag = true, non_mono_size=0, kwargs...) where {T, V}
+@doc (@doc iR2Solver) function iR2(nlp::AbstractNLPModel{T, V}; monotone_flag = true, non_mono_size=5, kwargs...) where {T, V}
   solver = iR2Solver(nlp, monotone_flag = monotone_flag, non_mono_size = non_mono_size)
   return solve!(solver, nlp; kwargs...)
 end

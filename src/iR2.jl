@@ -86,7 +86,7 @@ function iR2Solver(nlp::AbstractNLPModel{T, V}; monotone_flag = true, non_mono_s
   return iR2Solver{T, V}(x, gx, cx, d, σ,obj_vec)
 end
 
-@doc (@doc iR2Solver) function iR2(nlp::AbstractNLPModel{T, V}; kwargs...) where {T, V}
+@doc (@doc iR2Solver) function iR2(nlp::AbstractNLPModel{T, V}; monotone_flag = true, non_mono_size=0, kwargs...) where {T, V}
   solver = iR2Solver(nlp, monotone_flag = monotone_flag, non_mono_size = non_mono_size)
   return solve!(solver, nlp; kwargs...)
 end

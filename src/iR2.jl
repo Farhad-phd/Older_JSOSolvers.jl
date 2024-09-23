@@ -73,24 +73,29 @@ mutable struct iR2Solver{T, V} <: AbstractOptimizationSolver
   cx::V
   d::V   # used for momentum term
   σ::T
+  obj_vec::V # used for non-monotone behaviour
 end
 
-function iR2Solver(nlp::AbstractNLPModel{T, V}) where {T, V}
+function iR2Solver(nlp::AbstractNLPModel{T, V}; monotone_flag = true, non_mono_size=0) where {T, V}
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
   d = fill!(similar(nlp.meta.x0), 0)
   σ = zero(T) # init it to zero for now 
-  return iR2Solver{T, V}(x, gx, cx, d, σ)
+  obj_vec = (monotone_flag ?  nothing : fill(zero(T),non_mono_size)) 
+  return iR2Solver{T, V}(x, gx, cx, d, σ,obj_vec)
 end
 
 @doc (@doc iR2Solver) function iR2(nlp::AbstractNLPModel{T, V}; kwargs...) where {T, V}
-  solver = iR2Solver(nlp)
+  solver = iR2Solver(nlp, monotone_flag = monotone_flag, non_mono_size = non_mono_size)
   return solve!(solver, nlp; kwargs...)
 end
 
 function SolverCore.reset!(solver::iR2Solver{T}) where {T}
   solver.d .= zero(T)
+  if !isnothing(solver.obj_vec)
+    fill!(solver.obj_vec, zero(T))
+  end
   solver
 end
 SolverCore.reset!(solver::iR2Solver, ::AbstractNLPModel) = reset!(solver)
@@ -112,6 +117,8 @@ function SolverCore.solve!(
   max_iter::Int = typemax(Int),
   β::T = T(0),
   verbose::Int = 0,
+  monotone_flag = true, # when this is false we have non-monotone behaviour 
+  non_mono_size = 5,
 ) where {T, V}
   unconstrained(nlp) || error("iR2 should only be called on unconstrained problems.")
 
@@ -128,6 +135,7 @@ function SolverCore.solve!(
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
+  
 
   grad!(nlp, x, ∇fk)
   norm_∇fk = norm(∇fk)
@@ -187,7 +195,16 @@ function SolverCore.solve!(
       break
     end
 
-    ρk = (stats.objective - fck) / ΔTk
+    if !monotone_flag
+      push!(solver.obj_vec, stats.objective)
+      if length(solver.obj_vec) > non_mono_size
+        popfirst!(solver.obj_vec)
+      end
+      fck_max = maximum(solver.obj_vec)
+      ρk = (fck_max - fck) /(abs(fck_max - fck  -ΔTk))
+    else
+      ρk = (stats.objective - fck) / ΔTk
+    end
 
     # Update regularization parameters and Acceptance of the new candidate
     step_accepted = ρk >= η1 && σk >= η2

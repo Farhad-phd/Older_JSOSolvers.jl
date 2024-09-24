@@ -25,6 +25,7 @@ For advanced usage, first define a `iR2Solver` to preallocate the memory used in
 - `max_iter::Int = typemax(Int)`: maximum number of iterations.
 - `β = T(0) ∈ [0,1]` is the constant in the momentum term. If `β == 0`, iR2 does not use momentum.
 - `verbose::Int = 0`: if > 0, display iteration details every `verbose` iteration.
+- `non_mono_size = 1`: size of the non-monotone behaviour. If `non_mono_size > 1`, the algorithm will use a non-monotone behaviour.
 
 # Output
 The value returned is a `GenericExecutionStats`, see `SolverCore.jl`.
@@ -115,7 +116,7 @@ function SolverCore.solve!(
   max_iter::Int = typemax(Int),
   β::T = T(0),
   verbose::Int = 0,
-  non_mono_size = 5,
+  non_mono_size = 1,
 ) where {T, V}
   unconstrained(nlp) || error("iR2 should only be called on unconstrained problems.")
 

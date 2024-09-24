@@ -76,19 +76,18 @@ mutable struct iR2Solver{T, V} <: AbstractOptimizationSolver
   obj_vec::V # used for non-monotone behaviour
 end
 
-function iR2Solver(nlp::AbstractNLPModel{T, V}; monotone_flag = true, non_mono_size=5) where {T, V} #TODO remove the monotone flag
+function iR2Solver(nlp::AbstractNLPModel{T, V}; non_mono_size=5) where {T, V}
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
   d = fill!(similar(nlp.meta.x0), 0)
   σ = zero(T) # init it to zero for now 
-  # obj_vec = (monotone_flag ?  nothing : fill(zero(T),non_mono_size)) 
-  obj_vec = fill(zero(T),non_mono_size)
+  obj_vec = fill(typemin(T), non_mono_size)
   return iR2Solver{T, V}(x, gx, cx, d, σ, obj_vec)
 end
 
-@doc (@doc iR2Solver) function iR2(nlp::AbstractNLPModel{T, V}; monotone_flag = true, non_mono_size=5, kwargs...) where {T, V}
-  solver = iR2Solver(nlp, monotone_flag = monotone_flag, non_mono_size = non_mono_size)
+@doc (@doc iR2Solver) function iR2(nlp::AbstractNLPModel{T, V};  non_mono_size=5, kwargs...) where {T, V}
+  solver = iR2Solver(nlp,  non_mono_size = non_mono_size)
   return solve!(solver, nlp; kwargs...)
 end
 
@@ -116,7 +115,6 @@ function SolverCore.solve!(
   max_iter::Int = typemax(Int),
   β::T = T(0),
   verbose::Int = 0,
-  monotone_flag = true, # when this is false we have non-monotone behaviour 
   non_mono_size = 5,
 ) where {T, V}
   unconstrained(nlp) || error("iR2 should only be called on unconstrained problems.")
@@ -177,6 +175,7 @@ function SolverCore.solve!(
   # σk = solver.σ
 
   done = stats.status != :unknown
+  insert = 1
 
   while !done
     if β == 0
@@ -194,11 +193,9 @@ function SolverCore.solve!(
       break
     end
 
-    if !monotone_flag
-      push!(solver.obj_vec, stats.objective)
-      if length(solver.obj_vec) > non_mono_size
-        popfirst!(solver.obj_vec)
-      end
+    if non_mono_size > 1  #non-monotone behaviour
+      k = mod(stats.iter, non_mono_size) + 1
+      solver.obj_vec[k] = stats.objective
       fck_max = maximum(solver.obj_vec)
       ρk = (fck_max - fck) /(abs(fck_max - fck  -ΔTk))
     else

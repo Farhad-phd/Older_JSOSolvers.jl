@@ -94,9 +94,7 @@ end
 
 function SolverCore.reset!(solver::iR2Solver{T}) where {T}
   solver.d .= zero(T)
-  if !isnothing(solver.obj_vec) #TODO change this
-    fill!(solver.obj_vec, zero(T))
-  end
+  fill!(solver.obj_vec, zero(T))
   solver
 end
 SolverCore.reset!(solver::iR2Solver, ::AbstractNLPModel) = reset!(solver)

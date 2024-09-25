@@ -195,12 +195,15 @@ function SolverCore.solve!(
     end
 
     if non_mono_size > 1  #non-monotone behaviour
+      
       k = mod(stats.iter, non_mono_size) + 1
       solver.obj_vec[k] = stats.objective
       fck_max = maximum(solver.obj_vec)
       ρk = (fck_max - fck) /(abs(fck_max - fck  -ΔTk))
+      @info "Non-monotone behaviour, k= %d, ρk = %f, iter=%d fck_max=%f " k ρk  stats.iter fck_max
     else
       ρk = (stats.objective - fck) / ΔTk
+      @info "Monotone behaviour ρk = %f" ρk
     end
 
     # Update regularization parameters and Acceptance of the new candidate

@@ -203,7 +203,7 @@ function SolverCore.solve!(
       @info "Non-monotone behaviour, k= %d, ρk = %f, iter=%d fck_max=%f " k ρk  stats.iter fck_max
     else
       ρk = (stats.objective - fck) / ΔTk
-      @info "Monotone behaviour ρk = %f" ρk
+      @info "Monotone behaviour ρk = %f %d" ρk non_mono_size
     end
 
     # Update regularization parameters and Acceptance of the new candidate

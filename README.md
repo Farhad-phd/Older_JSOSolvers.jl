@@ -23,6 +23,7 @@ This package provides an implementation of four classic algorithms for unconstra
 - `lbfgs`: an implementation of a limited-memory BFGS line-search method for unconstrained minimization;
 - `R2`: a first-order quadratic regularization method for unconstrained optimization;
 - `iR2`: an inexact version of the first-order quadratic regularization method for unconstrained optimization;
+- `iR2N`: an inexact second-order quadratic regularization method for unconstrained optimization with shifted L-BFGS systems;
 - `tron`: a pure Julia implementation of TRON, a trust-region solver for bound-constrained optimization described in
 
     >  Chih-Jen Lin and Jorge J. Moré, *Newton's Method for Large Bound-Constrained
@@ -50,7 +51,7 @@ using JSOSolvers, ADNLPModels
 
 # Rosenbrock
 nlp = ADNLPModel(x -> 100 * (x[2] - x[1]^2)^2 + (x[1] - 1)^2, [-1.2; 1.0])
-stats = lbfgs(nlp) # or trunk, tron, R2, iR2
+stats = lbfgs(nlp) # or trunk, tron, R2, iR2, iR2N
 ```
 
 ## How to cite

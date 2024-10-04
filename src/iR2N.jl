@@ -239,14 +239,19 @@ function SolverCore.solve!(
       @info infoline
       σ_stat = step_accepted ? "↘" : "↗"
       infoline =
-        @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat
+        @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat #TODO print B norm
     end
 
     callback(nlp, solver, stats)
     #since our mini-batch may have changed the values of the gradient, we need to recompute it
+    #TODO put this in the callback 
+    #TODO change this to do it in the call back 
+    #TODO we don't update mini-batch if the step is not accepted or just increase the mini-batch size
+    #TODO test if we change B in each epoch once ?
     set_objective!(stats, obj(nlp, x))
     grad!(nlp, x, ∇fk)
     norm_∇fk = norm(∇fk)
+    ################
     set_dual_residual!(stats, norm_∇fk)
     σk = μk * norm_∇fk
     solver.σ = σk

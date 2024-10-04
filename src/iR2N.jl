@@ -76,6 +76,8 @@ mutable struct iR2NSolver{T, V, Op <: AbstractLinearOperator{T}} <: AbstractOpti
   d::V   # used for momentum term
   σ::T
   B::Op
+  s::V
+  gt::V
   Bs::V
   obj_vec::V # used for non-monotone behaviour
 end
@@ -89,10 +91,12 @@ function iR2NSolver(nlp::AbstractNLPModel{T, V};  mem::Int = 5, non_mono_size=1)
   σ = zero(T) # init it to zero for now 
   obj_vec = fill(typemin(T), non_mono_size)
   B = LBFGSOperator(T, nvar, mem = mem, scaling = true)
+  s = similar(nlp.meta.x0)
+  gt = similar(nlp.meta.x0)
   Bs = similar(nlp.meta.x0)
   Op = typeof(B)
 
-  return iR2NSolver{T, V, Op}(x, gx, cx, d, σ, B, Bs, obj_vec)
+  return iR2NSolver{T, V, Op}(x, gx, cx, d, σ, B,s,gt, Bs, obj_vec)
 end
 
 @doc (@doc iR2NSolver) function iR2N(nlp::AbstractNLPModel{T, V};  non_mono_size=1,  mem::Int = 5, kwargs...) where {T, V}
@@ -135,12 +139,14 @@ function SolverCore.solve!(
   μmin = σmin
 
   x = solver.x .= x
-  ∇fk = solver.gx
+  ∇fk = solver.gx # k-1
+  ∇ft = solver.gt #current 
   ck = solver.cx
-  #TODO s = solver.s
-  d = solver.d
+  s = solver.s
+  d = solver.d #TODO do we use this ?
   σk = solver.σ
   B = solver.B
+  reset!(B)
   Bs = solver.Bs
 
   set_iter!(stats, 0)
@@ -187,21 +193,19 @@ function SolverCore.solve!(
   # σk = solver.σ
 
   done = stats.status != :unknown
-  insert = 1
   n = nlp.meta.nvar
 
 
   while !done
-    s = #TODO shifter dolver
-    #TODO we need to make sure s is allocated
-    ck .= x .+ s
-    fck = obj(nlp, ck)
+
+    solve_shifted_system!(s,B,∇fk,σk)
 
     slope = -dot(n, s, ∇fk)
     mul!(Bs, B, s)
     curv = dot(n, s, Bs)
     ΔTk = slope + curv / 2
-    
+
+    ck .= x .+ s
     fck = obj(nlp, ck)
 
     if fck == -Inf
@@ -223,6 +227,10 @@ function SolverCore.solve!(
     if step_accepted
       μk = max(μmin, μk / λ)
       x .= ck
+      #Update L-BFGS
+      grad!(nlp, x, ∇ft) 
+      @. ∇fk = ∇ft - ∇fk # y = ∇f(xk+1) - ∇f(xk)  # we will update the ∇fk later here
+      push!(B, s, ∇fk)
     else
       μk = μk * λ
     end

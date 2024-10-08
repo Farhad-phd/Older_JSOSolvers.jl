@@ -77,7 +77,7 @@ mutable struct pR2Solver{T, V} <: AbstractOptimizationSolver
   obj_vec::V # used for non-monotone behaviour
 end
 
-function pR2Solver(nlp::AbstractNLPModel{T, V}; non_mono_size=1) where {T, V}
+function pR2Solver(nlp::AbstractNLPModel{T, V}; non_mono_size = 1) where {T, V}
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
@@ -87,8 +87,12 @@ function pR2Solver(nlp::AbstractNLPModel{T, V}; non_mono_size=1) where {T, V}
   return pR2Solver{T, V}(x, gx, cx, d, σ, obj_vec)
 end
 
-@doc (@doc pR2Solver) function pR2(nlp::AbstractNLPModel{T, V};  non_mono_size=1, kwargs...) where {T, V}
-  solver = pR2Solver(nlp,  non_mono_size = non_mono_size)
+@doc (@doc pR2Solver) function pR2(
+  nlp::AbstractNLPModel{T, V};
+  non_mono_size = 1,
+  kwargs...,
+) where {T, V}
+  solver = pR2Solver(nlp, non_mono_size = non_mono_size)
   return solve!(solver, nlp; non_mono_size = non_mono_size, kwargs...)
 end
 
@@ -133,7 +137,6 @@ function SolverCore.solve!(
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
-  
 
   grad!(nlp, x, ∇fk)
   norm_∇fk = norm(∇fk)
@@ -172,11 +175,8 @@ function SolverCore.solve!(
   )
 
   solver.σ = σk
-  # callback(nlp, solver, stats)
-  # σk = solver.σ
 
   done = stats.status != :unknown
-  insert = 1
 
   while !done
     if β == 0
@@ -198,7 +198,7 @@ function SolverCore.solve!(
       k = mod(stats.iter, non_mono_size) + 1
       solver.obj_vec[k] = stats.objective
       fck_max = maximum(solver.obj_vec)
-      ρk = (fck_max - fck) /(abs(fck_max - fck  -ΔTk))
+      ρk = (fck_max - fck) / (abs(fck_max - fck - ΔTk))
     else
       ρk = (stats.objective - fck) / ΔTk
     end
@@ -219,21 +219,22 @@ function SolverCore.solve!(
         @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat
     end
 
+    set_iter!(stats, stats.iter + 1)
+    set_time!(stats, time() - start_time)
+
     callback(nlp, solver, stats)
-    #since our mini-batch may have changed the values of the gradient, we need to recompute it
-    set_objective!(stats, obj(nlp, x))
-    grad!(nlp, x, ∇fk)
+
+    ∇fk = solver.gx
     norm_∇fk = norm(∇fk)
+
     set_dual_residual!(stats, norm_∇fk)
     σk = μk * norm_∇fk
     solver.σ = σk
 
-    set_iter!(stats, stats.iter + 1)
-    set_time!(stats, time() - start_time)
     optimal = norm_∇fk ≤ ϵ
 
-    #Since the user can force the status to be something else, we need to check if the user has stopped the algorithm
-    if stats.status == :first_order #this is what user set in their callback
+    #Since the user can force the status, we need to check if the user has stopped the algorithm
+    if stats.status == :first_order #this is what user set in their callback, in DNN training 
       set_status!(stats, :first_order)
     else
       set_status!(

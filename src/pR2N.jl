@@ -1,4 +1,5 @@
 export pR2N, pR2NSolver
+using LinearOperators
 
 """
     pR2N(nlp; kwargs...)
@@ -82,25 +83,29 @@ mutable struct pR2NSolver{T, V, Op <: AbstractLinearOperator{T}} <: AbstractOpti
   obj_vec::V # used for non-monotone behaviour
 end
 
-function pR2NSolver(nlp::AbstractNLPModel{T, V};  mem::Int = 5, non_mono_size=1) where {T, V}
+function pR2NSolver(nlp::AbstractNLPModel{T, V}; mem::Int = 5, non_mono_size = 1) where {T, V}
   nvar = nlp.meta.nvar
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
   d = fill!(similar(nlp.meta.x0), 0)
   σ = zero(T) # init it to zero for now 
-  obj_vec = fill(typemin(T), non_mono_size)
   B = LBFGSOperator(T, nvar, mem = mem, scaling = true)
   s = similar(nlp.meta.x0)
   gt = similar(nlp.meta.x0)
   Bs = similar(nlp.meta.x0)
   Op = typeof(B)
-
-  return pR2NSolver{T, V, Op}(x, gx, cx, d, σ, B,s,gt, Bs, obj_vec)
+  obj_vec = fill(typemin(T), non_mono_size)
+  return pR2NSolver{T, V, Op}(x, gx, cx, d, σ, B, s, gt, Bs, obj_vec)
 end
 
-@doc (@doc pR2NSolver) function pR2N(nlp::AbstractNLPModel{T, V};  non_mono_size=1,  mem::Int = 5, kwargs...) where {T, V}
-  solver = pR2NSolver(nlp, mem = mem  ,non_mono_size = non_mono_size)
+@doc (@doc pR2NSolver) function pR2N(
+  nlp::AbstractNLPModel{T, V};
+  non_mono_size = 1,
+  mem::Int = 5,
+  kwargs...,
+) where {T, V}
+  solver = pR2NSolver(nlp, mem = mem, non_mono_size = non_mono_size)
   return solve!(solver, nlp; non_mono_size = non_mono_size, kwargs...) #TODO we don't need to pass  mem::Int = 5, since it will be B.Data.mem
 end
 
@@ -151,13 +156,12 @@ function SolverCore.solve!(
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
-  
 
   grad!(nlp, x, ∇fk)
   norm_∇fk = norm(∇fk)
   set_dual_residual!(stats, norm_∇fk)
 
-  μk = 2^round(log2(norm_∇fk + 1)) / norm_∇fk #TODO confirm if this is the correct initialization
+  μk = 2^round(log2(norm_∇fk + 1)) / norm_∇fk
   σk = μk * norm_∇fk
   ρk = zero(T)
 
@@ -189,17 +193,13 @@ function SolverCore.solve!(
   )
 
   solver.σ = σk
-  # callback(nlp, solver, stats)
-  # σk = solver.σ
 
   done = stats.status != :unknown
   n = nlp.meta.nvar
 
-
   while !done
-
-    solve_shifted_system!(s,B,∇fk,σk)
-
+    solve_shifted_system!(s, B, ∇fk, σk)
+    
     slope = -dot(n, s, ∇fk)
     mul!(Bs, B, s)
     curv = dot(n, s, Bs)
@@ -217,7 +217,7 @@ function SolverCore.solve!(
       k = mod(stats.iter, non_mono_size) + 1
       solver.obj_vec[k] = stats.objective
       fck_max = maximum(solver.obj_vec)
-      ρk = (fck_max - fck) /(abs(fck_max - fck  - ΔTk))
+      ρk = (fck_max - fck) / (abs(fck_max - fck - ΔTk))
     else
       ρk = (stats.objective - fck) / ΔTk
     end
@@ -228,7 +228,7 @@ function SolverCore.solve!(
       μk = max(μmin, μk / λ)
       x .= ck
       #Update L-BFGS
-      grad!(nlp, x, ∇ft) 
+      grad!(nlp, x, ∇ft)
       @. ∇fk = ∇ft - ∇fk # y = ∇f(xk+1) - ∇f(xk)  # we will update the ∇fk later here
       push!(B, s, ∇fk)
     else
@@ -242,22 +242,18 @@ function SolverCore.solve!(
         @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat #TODO print B norm
     end
 
+    set_iter!(stats, stats.iter + 1)
+    set_time!(stats, time() - start_time)
+
     callback(nlp, solver, stats)
-    #since our mini-batch may have changed the values of the gradient, we need to recompute it
-    #TODO put this in the callback 
-    #TODO change this to do it in the call back 
-    #TODO we don't update mini-batch if the step is not accepted or just increase the mini-batch size
-    #TODO test if we change B in each epoch once ?
-    set_objective!(stats, obj(nlp, x))
-    grad!(nlp, x, ∇fk)
+
+    ∇fk = solver.gx
     norm_∇fk = norm(∇fk)
-    ################
+
     set_dual_residual!(stats, norm_∇fk)
     σk = μk * norm_∇fk
     solver.σ = σk
 
-    set_iter!(stats, stats.iter + 1)
-    set_time!(stats, time() - start_time)
     optimal = norm_∇fk ≤ ϵ
 
     #Since the user can force the status to be something else, we need to check if the user has stopped the algorithm

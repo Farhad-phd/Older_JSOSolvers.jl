@@ -1,13 +1,13 @@
-export iR2N, iR2NSolver
+export pR2N, pR2NSolver
 
 """
-    iR2N(nlp; kwargs...)
+    pR2N(nlp; kwargs...)
 
 An inexact second-order quadratic regularization method for unconstrained optimization with shifted L-BFGS.
 
-For advanced usage, first define a `iR2NSolver` to preallocate the memory used in the algorithm, and then call `solve!`:
+For advanced usage, first define a `pR2NSolver` to preallocate the memory used in the algorithm, and then call `solve!`:
 
-    solver = iR2NSolver(nlp; mem::Int = 5)
+    solver = pR2NSolver(nlp; mem::Int = 5)
     solve!(solver, nlp; kwargs...)
 
 # Arguments
@@ -20,11 +20,11 @@ For advanced usage, first define a `iR2NSolver` to preallocate the memory used i
 - `rtol::T = √eps(T)`: relative tolerance: algorithm stops when ‖∇f(xᵏ)‖ ≤ atol + rtol * ‖∇f(x⁰)‖.
 - `η1 = eps(T)^(1/4)`, `η2 = T(0.95)`: step acceptance parameters.
 - `λ = T(2)`, λ > 1 regularization update parameters. 
-- `σmin = eps(T)`: step parameter for iR2N algorithm.
+- `σmin = eps(T)`: step parameter for pR2N algorithm.
 - `max_eval::Int = -1`: maximum number of evaluation of the objective function.
 - `max_time::Float64 = 30.0`: maximum time limit in seconds.
 - `max_iter::Int = typemax(Int)`: maximum number of iterations.
-- `β = T(0) ∈ [0,1]` is the constant in the momentum term. If `β == 0`, iR2N does not use momentum.
+- `β = T(0) ∈ [0,1]` is the constant in the momentum term. If `β == 0`, pR2N does not use momentum.
 - `verbose::Int = 0`: if > 0, display iteration details every `verbose` iteration.
 - `non_mono_size = 1`: size of the non-monotone behaviour. If `non_mono_size > 1`, the algorithm will use a non-monotone behaviour.
 
@@ -51,7 +51,7 @@ Notably, you can access, and modify, the following:
 ```jldoctest
 using JSOSolvers, ADNLPModels
 nlp = ADNLPModel(x -> sum(x.^2), ones(3))
-stats = iR2N(nlp; mem::Int = 5)
+stats = pR2N(nlp; mem::Int = 5)
 
 # output
 
@@ -61,7 +61,7 @@ stats = iR2N(nlp; mem::Int = 5)
 ```jldoctest
 using JSOSolvers, ADNLPModels
 nlp = ADNLPModel(x -> sum(x.^2), ones(3))
-solver = iR2NSolver(nlp);
+solver = pR2NSolver(nlp);
 stats = solve!(solver, nlp)
 
 # output
@@ -69,7 +69,7 @@ stats = solve!(solver, nlp)
 "Execution stats: first-order stationary"
 ```
 """
-mutable struct iR2NSolver{T, V, Op <: AbstractLinearOperator{T}} <: AbstractOptimizationSolver
+mutable struct pR2NSolver{T, V, Op <: AbstractLinearOperator{T}} <: AbstractOptimizationSolver
   x::V
   gx::V
   cx::V
@@ -82,7 +82,7 @@ mutable struct iR2NSolver{T, V, Op <: AbstractLinearOperator{T}} <: AbstractOpti
   obj_vec::V # used for non-monotone behaviour
 end
 
-function iR2NSolver(nlp::AbstractNLPModel{T, V};  mem::Int = 5, non_mono_size=1) where {T, V}
+function pR2NSolver(nlp::AbstractNLPModel{T, V};  mem::Int = 5, non_mono_size=1) where {T, V}
   nvar = nlp.meta.nvar
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
@@ -96,24 +96,24 @@ function iR2NSolver(nlp::AbstractNLPModel{T, V};  mem::Int = 5, non_mono_size=1)
   Bs = similar(nlp.meta.x0)
   Op = typeof(B)
 
-  return iR2NSolver{T, V, Op}(x, gx, cx, d, σ, B,s,gt, Bs, obj_vec)
+  return pR2NSolver{T, V, Op}(x, gx, cx, d, σ, B,s,gt, Bs, obj_vec)
 end
 
-@doc (@doc iR2NSolver) function iR2N(nlp::AbstractNLPModel{T, V};  non_mono_size=1,  mem::Int = 5, kwargs...) where {T, V}
-  solver = iR2NSolver(nlp, mem = mem  ,non_mono_size = non_mono_size)
+@doc (@doc pR2NSolver) function pR2N(nlp::AbstractNLPModel{T, V};  non_mono_size=1,  mem::Int = 5, kwargs...) where {T, V}
+  solver = pR2NSolver(nlp, mem = mem  ,non_mono_size = non_mono_size)
   return solve!(solver, nlp; non_mono_size = non_mono_size, kwargs...) #TODO we don't need to pass  mem::Int = 5, since it will be B.Data.mem
 end
 
-function SolverCore.reset!(solver::iR2NSolver{T}) where {T}
+function SolverCore.reset!(solver::pR2NSolver{T}) where {T}
   solver.d .= zero(T)
   reset!(solver.B)
   fill!(solver.obj_vec, typemin(T))
   solver
 end
-SolverCore.reset!(solver::iR2NSolver, ::AbstractNLPModel) = reset!(solver)
+SolverCore.reset!(solver::pR2NSolver, ::AbstractNLPModel) = reset!(solver)
 
 function SolverCore.solve!(
-  solver::iR2NSolver{T, V},
+  solver::pR2NSolver{T, V},
   nlp::AbstractNLPModel{T, V},
   stats::GenericExecutionStats{T, V};
   callback = (args...) -> nothing,
@@ -131,7 +131,7 @@ function SolverCore.solve!(
   verbose::Int = 0,
   non_mono_size = 1,
 ) where {T, V}
-  unconstrained(nlp) || error("iR2N should only be called on unconstrained problems.")
+  unconstrained(nlp) || error("pR2N should only be called on unconstrained problems.")
 
   reset!(stats)
   start_time = time()

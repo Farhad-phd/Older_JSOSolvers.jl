@@ -8,8 +8,8 @@ function tests()
         ("lbfgs", lbfgs),
         ("tron", tron),
         ("R2", R2),
-        ("iR2", iR2),
-        ("iR2N", iR2N),
+        ("pR2", pR2),
+        ("pR2N", pR2N),
       ]
         unconstrained_nlp(solver)
         multiprecision_nlp(solver, :unc)

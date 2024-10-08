@@ -14,8 +14,8 @@ export solve!
 include("lbfgs.jl")
 include("trunk.jl")
 include("R2.jl")
-include("iR2.jl")
-include("iR2N.jl")
+include("pR2.jl")
+include("pR2N.jl")
 
 
 # Unconstrained solvers for NLS

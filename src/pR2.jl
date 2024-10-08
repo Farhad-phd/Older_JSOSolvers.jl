@@ -1,13 +1,13 @@
-export iR2, iR2Solver
+export pR2, pR2Solver
 
 """
-    iR2(nlp; kwargs...)
+    pR2(nlp; kwargs...)
 
 An inexact stochastic first-order quadratic regularization method for unconstrained optimization.
 
-For advanced usage, first define a `iR2Solver` to preallocate the memory used in the algorithm, and then call `solve!`:
+For advanced usage, first define a `pR2Solver` to preallocate the memory used in the algorithm, and then call `solve!`:
 
-    solver = iR2Solver(nlp)
+    solver = pR2Solver(nlp)
     solve!(solver, nlp; kwargs...)
 
 # Arguments
@@ -19,11 +19,11 @@ For advanced usage, first define a `iR2Solver` to preallocate the memory used in
 - `rtol::T = √eps(T)`: relative tolerance: algorithm stops when ‖∇f(xᵏ)‖ ≤ atol + rtol * ‖∇f(x⁰)‖.
 - `η1 = eps(T)^(1/4)`, `η2 = T(0.95)`: step acceptance parameters.
 - `λ = T(2)`, λ > 1 regularization update parameters. 
-- `σmin = eps(T)`: step parameter for iR2 algorithm.
+- `σmin = eps(T)`: step parameter for pR2 algorithm.
 - `max_eval::Int = -1`: maximum number of evaluation of the objective function.
 - `max_time::Float64 = 30.0`: maximum time limit in seconds.
 - `max_iter::Int = typemax(Int)`: maximum number of iterations.
-- `β = T(0) ∈ [0,1]` is the constant in the momentum term. If `β == 0`, iR2 does not use momentum.
+- `β = T(0) ∈ [0,1]` is the constant in the momentum term. If `β == 0`, pR2 does not use momentum.
 - `verbose::Int = 0`: if > 0, display iteration details every `verbose` iteration.
 - `non_mono_size = 1`: size of the non-monotone behaviour. If `non_mono_size > 1`, the algorithm will use a non-monotone behaviour.
 
@@ -50,7 +50,7 @@ Notably, you can access, and modify, the following:
 ```jldoctest
 using JSOSolvers, ADNLPModels
 nlp = ADNLPModel(x -> sum(x.^2), ones(3))
-stats = iR2(nlp)
+stats = pR2(nlp)
 
 # output
 
@@ -60,7 +60,7 @@ stats = iR2(nlp)
 ```jldoctest
 using JSOSolvers, ADNLPModels
 nlp = ADNLPModel(x -> sum(x.^2), ones(3))
-solver = iR2Solver(nlp);
+solver = pR2Solver(nlp);
 stats = solve!(solver, nlp)
 
 # output
@@ -68,7 +68,7 @@ stats = solve!(solver, nlp)
 "Execution stats: first-order stationary"
 ```
 """
-mutable struct iR2Solver{T, V} <: AbstractOptimizationSolver
+mutable struct pR2Solver{T, V} <: AbstractOptimizationSolver
   x::V
   gx::V
   cx::V
@@ -77,30 +77,30 @@ mutable struct iR2Solver{T, V} <: AbstractOptimizationSolver
   obj_vec::V # used for non-monotone behaviour
 end
 
-function iR2Solver(nlp::AbstractNLPModel{T, V}; non_mono_size=1) where {T, V}
+function pR2Solver(nlp::AbstractNLPModel{T, V}; non_mono_size=1) where {T, V}
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
   d = fill!(similar(nlp.meta.x0), 0)
   σ = zero(T) # init it to zero for now 
   obj_vec = fill(typemin(T), non_mono_size)
-  return iR2Solver{T, V}(x, gx, cx, d, σ, obj_vec)
+  return pR2Solver{T, V}(x, gx, cx, d, σ, obj_vec)
 end
 
-@doc (@doc iR2Solver) function iR2(nlp::AbstractNLPModel{T, V};  non_mono_size=1, kwargs...) where {T, V}
-  solver = iR2Solver(nlp,  non_mono_size = non_mono_size)
+@doc (@doc pR2Solver) function pR2(nlp::AbstractNLPModel{T, V};  non_mono_size=1, kwargs...) where {T, V}
+  solver = pR2Solver(nlp,  non_mono_size = non_mono_size)
   return solve!(solver, nlp; non_mono_size = non_mono_size, kwargs...)
 end
 
-function SolverCore.reset!(solver::iR2Solver{T}) where {T}
+function SolverCore.reset!(solver::pR2Solver{T}) where {T}
   solver.d .= zero(T)
   fill!(solver.obj_vec, typemin(T))
   solver
 end
-SolverCore.reset!(solver::iR2Solver, ::AbstractNLPModel) = reset!(solver)
+SolverCore.reset!(solver::pR2Solver, ::AbstractNLPModel) = reset!(solver)
 
 function SolverCore.solve!(
-  solver::iR2Solver{T, V},
+  solver::pR2Solver{T, V},
   nlp::AbstractNLPModel{T, V},
   stats::GenericExecutionStats{T, V};
   callback = (args...) -> nothing,
@@ -118,7 +118,7 @@ function SolverCore.solve!(
   verbose::Int = 0,
   non_mono_size = 1,
 ) where {T, V}
-  unconstrained(nlp) || error("iR2 should only be called on unconstrained problems.")
+  unconstrained(nlp) || error("pR2 should only be called on unconstrained problems.")
 
   reset!(stats)
   start_time = time()

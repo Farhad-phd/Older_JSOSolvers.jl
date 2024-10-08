@@ -231,6 +231,11 @@ function SolverCore.solve!(
       grad!(nlp, x, ∇ft)
       @. ∇fk = ∇ft - ∇fk # y = ∇f(xk+1) - ∇f(xk)  # we will update the ∇fk later here
       push!(B, s, ∇fk)
+
+      set_objective!(stats, fck)
+      # grad!(nlp, x, ∇fk) #TODO we may not need ∇ft ?
+      @. ∇fk = ∇ft # copy ∇ft to ∇fk
+      solver.gx .= ∇fk # do we need this?
     else
       μk = μk * λ
     end

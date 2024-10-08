@@ -208,6 +208,9 @@ function SolverCore.solve!(
     if step_accepted
       μk = max(μmin, μk / λ)
       x .= ck
+      set_objective!(stats, fck)
+      grad!(nlp, x, ∇fk)
+      solver.gx .= ∇fk # do we need this?
     else
       μk = μk * λ
     end
@@ -224,7 +227,7 @@ function SolverCore.solve!(
 
     callback(nlp, solver, stats)
 
-    ∇fk = solver.gx
+    ∇fk = solver.gx #TODO check if we need this
     norm_∇fk = norm(∇fk)
 
     set_dual_residual!(stats, norm_∇fk)

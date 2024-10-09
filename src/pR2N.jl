@@ -213,7 +213,7 @@ function SolverCore.solve!(
       k = mod(stats.iter, non_mono_size) + 1
       solver.obj_vec[k] = stats.objective
       fck_max = maximum(solver.obj_vec)
-      ρk = (fck_max - fck) / (abs(fck_max - fck + ΔTk))
+      ρk = (fck_max - fck) / ( fck_max - fck + ΔTk)
     else
       ρk = (stats.objective - fck) / ΔTk
     end

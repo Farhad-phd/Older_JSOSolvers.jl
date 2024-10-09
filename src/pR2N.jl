@@ -79,7 +79,6 @@ mutable struct pR2NSolver{T, V, Op <: AbstractLinearOperator{T}} <: AbstractOpti
   B::Op
   s::V
   gt::V
-  Bs::V
   obj_vec::V # used for non-monotone behaviour
 end
 
@@ -93,10 +92,9 @@ function pR2NSolver(nlp::AbstractNLPModel{T, V}; mem::Int = 5, non_mono_size = 1
   B = LBFGSOperator(T, nvar, mem = mem, scaling = true)
   s = similar(nlp.meta.x0)
   gt = similar(nlp.meta.x0)
-  Bs = similar(nlp.meta.x0)
   Op = typeof(B)
   obj_vec = fill(typemin(T), non_mono_size)
-  return pR2NSolver{T, V, Op}(x, gx, cx, d, σ, B, s, gt, Bs, obj_vec)
+  return pR2NSolver{T, V, Op}(x, gx, cx, d, σ, B, s, gt,  obj_vec)
 end
 
 @doc (@doc pR2NSolver) function pR2N(
@@ -152,7 +150,6 @@ function SolverCore.solve!(
   σk = solver.σ
   B = solver.B
   reset!(B)
-  Bs = solver.Bs
 
   set_iter!(stats, 0)
   set_objective!(stats, obj(nlp, x))
@@ -201,8 +198,7 @@ function SolverCore.solve!(
     solve_shifted_system!(s, B, -∇fk, σk)
     
     slope = dot(s , ∇fk)
-    mul!(Bs, B, s)
-    curv = dot(s, Bs)
+    curv = dot(s, -(∇fk + σ.* s))
     ΔTk = -slope - curv / 2
 
     ck .= x .+ s

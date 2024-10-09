@@ -198,12 +198,12 @@ function SolverCore.solve!(
   n = nlp.meta.nvar
 
   while !done
-    solve_shifted_system!(s, B, ∇fk, σk)
+    solve_shifted_system!(s, B, -∇fk, σk)
     
     slope = dot(s , ∇fk)
     mul!(Bs, B, s)
     curv = dot(s, Bs)
-    ΔTk = slope + curv / 2
+    ΔTk = -slope - curv / 2
 
     ck .= x .+ s
     fck = obj(nlp, ck)

@@ -198,7 +198,7 @@ function SolverCore.solve!(
     solve_shifted_system!(s, B, -∇fk, σk)
     
     slope = dot(s , ∇fk)
-    curv = dot(s, -(∇fk + σ.* s))
+    curv = dot(s, -(∇fk + σk.* s))
     ΔTk = -slope - curv / 2
 
     ck .= x .+ s

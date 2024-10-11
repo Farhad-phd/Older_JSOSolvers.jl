@@ -231,7 +231,7 @@ function SolverCore.solve!(
       set_objective!(stats, fck)
       # grad!(nlp, x, ∇fk) #TODO we may not need ∇ft ?
       @. ∇fk = ∇ft # copy ∇ft to ∇fk
-      solver.gx .= ∇fk # do we need this?
+      # solver.gx .= ∇fk # do we need this?
     else
       μk = μk * λ
     end

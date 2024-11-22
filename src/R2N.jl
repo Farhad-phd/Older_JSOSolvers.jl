@@ -79,7 +79,7 @@ mutable struct R2NSolver{T, V,Op <: AbstractLinearOperator{T}} <: AbstractOptimi
   obj_vec::V # used for non-monotone behaviour
 end
 
-function R2NSolver(nlp::AbstractNLPModel{T, V}) where {T, V}
+function R2NSolver(nlp::AbstractNLPModel{T, V}; mem::Int = 5, non_mono_size = 1) where {T, V}
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)

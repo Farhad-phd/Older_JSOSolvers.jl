@@ -80,6 +80,7 @@ mutable struct R2NSolver{T, V,Op <: AbstractLinearOperator{T}} <: AbstractOptimi
 end
 
 function R2NSolver(nlp::AbstractNLPModel{T, V}; mem::Int = 5, non_mono_size = 1) where {T, V}
+  nvar = nlp.meta.nvar
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
   cx = similar(nlp.meta.x0)
@@ -89,7 +90,7 @@ function R2NSolver(nlp::AbstractNLPModel{T, V}; mem::Int = 5, non_mono_size = 1)
   gt = similar(nlp.meta.x0)
   Op = typeof(B)
   obj_vec = fill(typemin(T), non_mono_size)
-  return R2NSolver{T, V, Op}(x, gx, cx, d, σ, B, s, gt,  obj_vec)
+  return R2NSolver{T, V, Op}(x, gx, cx, σ, B, s, gt,  obj_vec)
 end
 
 @doc (@doc R2NSolver) function R2N(nlp::AbstractNLPModel{T, V};   non_mono_size = 1,mem::Int = 5, kwargs...) where {T, V}

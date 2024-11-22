@@ -92,7 +92,7 @@ function pR2NSolver(nlp::AbstractNLPModel{T, V}; mem::Int = 5, non_mono_size = 1
   gt = similar(nlp.meta.x0)
   Op = typeof(B)
   obj_vec = fill(typemin(T), non_mono_size)
-  return pR2NSolver{T, V, Op}(x, gx, cx, d, σ, B, s, gt,  obj_vec)
+  return pR2NSolver{T, V, Op}(x, gx, cx,  σ, B, s, gt,  obj_vec)
 end
 
 @doc (@doc pR2NSolver) function pR2N(

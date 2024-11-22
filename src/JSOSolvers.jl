@@ -15,6 +15,7 @@ include("lbfgs.jl")
 include("trunk.jl")
 include("R2.jl")
 include("pR2.jl")
+include("R2N.jl")
 include("pR2N.jl")
 
 

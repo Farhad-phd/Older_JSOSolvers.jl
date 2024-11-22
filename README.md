@@ -22,6 +22,7 @@ This package provides an implementation of four classic algorithms for unconstra
 
 - `lbfgs`: an implementation of a limited-memory BFGS line-search method for unconstrained minimization;
 - `R2`: a first-order quadratic regularization method for unconstrained optimization;
+<!-- - `R2N`: #TODO -->
 - `pR2`: an inexact version of the first-order quadratic regularization method for unconstrained optimization;
 - `pR2N`: an inexact second-order quadratic regularization method for unconstrained optimization with shifted L-BFGS systems;
 - `tron`: a pure Julia implementation of TRON, a trust-region solver for bound-constrained optimization described in

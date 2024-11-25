@@ -1,6 +1,13 @@
 using LinearOperators
 export R2N, R2NSolver
 
+abstract type AbstractShiftedLBFGSSolver end
+
+
+struct ShiftedLBFGSSolver <: AbstractShiftedLBFGSSolver
+    # Shifted LBFGS-specific fields
+end
+
 """
     R2N(nlp; kwargs...)
 
@@ -68,7 +75,7 @@ stats = solve!(solver, nlp)
 "Execution stats: first-order stationary"
 ```
 """
-mutable struct R2NSolver{T, V,Op <: AbstractLinearOperator{T}} <: AbstractOptimizationSolver
+mutable struct R2NSolver{T, V,Op <: AbstractLinearOperator{T}, Sub <:Union{KrylovSolver{T, T, V}, ShiftedLBFGSSolver}} <: AbstractOptimizationSolver
   x::V
   gx::V
   cx::V
@@ -77,9 +84,10 @@ mutable struct R2NSolver{T, V,Op <: AbstractLinearOperator{T}} <: AbstractOptimi
   s::V
   gt::V
   obj_vec::V # used for non-monotone behaviour
+  subsolver_type::Sub
 end
 
-function R2NSolver(nlp::AbstractNLPModel{T, V}; mem::Int = 5, non_mono_size = 1) where {T, V}
+function R2NSolver(nlp::AbstractNLPModel{T, V}; mem::Int = 5, non_mono_size = 1,   subsolver_type::Union{Type{<:KrylovSolver},Type{ShiftedLBFGSSolver}} = ShiftedLBFGSSolver  ) where {T, V}
   nvar = nlp.meta.nvar
   x = similar(nlp.meta.x0)
   gx = similar(nlp.meta.x0)
@@ -90,10 +98,12 @@ function R2NSolver(nlp::AbstractNLPModel{T, V}; mem::Int = 5, non_mono_size = 1)
   gt = similar(nlp.meta.x0)
   Op = typeof(B)
   obj_vec = fill(typemin(T), non_mono_size)
-  return R2NSolver{T, V, Op}(x, gx, cx, σ, B, s, gt,  obj_vec)
+  subsolver = isa(subsolver, ShiftedLBFGSSolver) ? subsolver_type() : subsolver_type(nvar, nvar, V)
+  Sub = typeof(subsolver)
+  return R2NSolver{T, V, Op, Sub}(x, gx, cx, σ, B, s, gt,  obj_vec,subsolver)
 end
 
-@doc (@doc R2NSolver) function R2N(nlp::AbstractNLPModel{T, V};   non_mono_size = 1,mem::Int = 5, kwargs...) where {T, V}
+@doc (@doc R2NSolver) function R2N(nlp::AbstractNLPModel{T, V};   subsolver_type::Union{Type{<:KrylovSolver},Type{ShiftedLBFGSSolver}} = ShiftedLBFGSSolver, non_mono_size = 1, mem::Int = 5, kwargs...) where {T, V}
   solver = R2NSolver(nlp, mem = mem, non_mono_size = non_mono_size)
   return solve!(solver, nlp;  non_mono_size = non_mono_size, kwargs...) #TODO we don't need to pass  mem::Int = 5, since it will be B.Data.mem
 end
@@ -123,6 +133,7 @@ function SolverCore.solve!(
   max_eval::Int = -1,
   max_iter::Int = typemax(Int),
   verbose::Int = 0,
+  subsolver_verbose::Int = 0,
   non_mono_size = 1
 ) where {T, V}
   unconstrained(nlp) || error("R2N should only be called on unconstrained problems.")
@@ -138,6 +149,9 @@ function SolverCore.solve!(
   B = solver.B
   ck = solver.cx
   σk = solver.σ
+  subsolver = solver.subsolver
+  cgtol = one(T)  # Must be ≤ 1.0
+
   reset!(B) #TODO do I need this here?
 
   set_iter!(stats, 0)
@@ -181,8 +195,10 @@ function SolverCore.solve!(
   done = stats.status != :unknown
 
   while !done
-
-    solve_shifted_system!(s, B, -∇fk, σk)
+    cgtol = max(rtol, min(T(0.1), √∇fNorm2, T(0.9) * cgtol))
+    ∇f .*= -1
+    subsolve!(solver, s, B, ∇fk, atol, cgtol, n,σk, subsolver_verbose)
+    # solve_shifted_system!(s, B, -∇fk, σk)
     slope = dot(s , ∇fk)
     curv = dot(s, -(∇fk + σk.* s))
     ΔTk = -slope - curv / 2
@@ -257,4 +273,27 @@ function SolverCore.solve!(
 
   set_solution!(stats, x)
   return stats
+end
+
+function subsolve!(R2N::R2NSolver, s ,B, ∇f, atol, cgtol, n, σ , subsolver_verbose)
+  if R2N.subsolver_type isa KrylovSolver
+      Krylov.solve!(
+          R2N.subsolver_type,
+          (B+σ*I),
+          ∇f,
+          atol = atol,
+          rtol = cgtol,
+          itmax = max(2 * n, 50),
+          verbose = subsolver_verbose,
+      )
+      R2N.subsolver_type.x, R2N.subsolver_type.stats
+  elseif R2N.subsolver_type isa ShiftedLBFGSSolver
+      σk = tr.some_parameter  # Replace with actual parameter
+
+      solve_shifted_system!(s, B, ∇f, σ)
+      
+      R2N.subsolver_type.stats = Dict("info" => "Shifted system solved exactly")
+  else
+      error("Unsupported subsolver type")
+  end
 end

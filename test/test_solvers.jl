@@ -62,7 +62,7 @@ function simple_Run()
 
   statsR2 = R2(nlp)
   println(statsR2.status, statsR2.iter)
-  stats = R2N(nlp)
+  stats = R2N(nlp, subsolver_type = JSOSolvers.ShiftedLBFGSSolver) 
   println(stats.status, stats.iter)
 
   # @test stats.status == :first_order

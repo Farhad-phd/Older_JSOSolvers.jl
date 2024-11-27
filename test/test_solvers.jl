@@ -1,5 +1,9 @@
 using SolverTest
 
+using BenchmarkTools
+
+
+
 # function tests()
 #   @testset "Testing NLP solvers" begin
 #     @testset "Unconstrained solvers" begin
@@ -60,24 +64,46 @@ function simple_Run()
   nlp = ADNLPModel(f, [-1.2; 1.0])
 
 
-  statsR2 = R2(nlp)
-  println(statsR2.status, statsR2.iter)
+  # statsR2 = R2(nlp)
+  # println(statsR2.status, statsR2.iter)
   stats = R2N(nlp, subsolver_type = JSOSolvers.ShiftedLBFGSSolver) 
   println(stats.status, stats.iter)
 
-  # @test stats.status == :first_order
-  stats2 = R2N(nlp, subsolver_type = CgSolver)
-  println(stats2.status, stats2.iter)
+  # # @test stats.status == :first_order
+  # stats2 = R2N(nlp, subsolver_type = CgSolver)
+  # println(stats2.status, stats2.iter)
 
   # @test stats2.status == :first_order
   # @test stats2.solution_reliable
 
-  nlp3 = ADNLSModel(x -> [[10 * (x[i + 1] - x[i]^2) for i = 1:(30 - 1)]; [x[i] - 1 for i = 1:(30 - 1)]], collect(1:30) ./ (30 + 1), 2*30 - 2)
-  stats3 = R2N(nlp3, subsolver_type = CgSolver)
-  println(stats3.status)
+  # nlp3 = ADNLSModel(x -> [[10 * (x[i + 1] - x[i]^2) for i = 1:(30 - 1)]; [x[i] - 1 for i = 1:(30 - 1)]], collect(1:30) ./ (30 + 1), 2*30 - 2)
+  # stats3 = R2N(nlp3, subsolver_type = CgSolver)
+  # println(stats3.status)
 
+  
+    # Ensure the function allocates no more than expected
+    solver = JSOSolvers.ShiftedLBFGSSolver
+    # @benchmark  R2N($nlp, subsolver_type = $solver) 
+    b = @benchmark R2N($nlp, subsolver_type = $solver)
+    # b= @benchmark lbfgs($nlp)
+    io = IOBuffer()
+    show(io, "text/plain", b)
+    s = String(take!(io))
+    println(s)
+    # Analyze results
+    println(b)
 
-  # @test stats3.status == :first_order
+    #For lbfgs
+    println("For lbfgs")
+    solver = lbfgs
+    b = @benchmark lbfgs($nlp)
+    io = IOBuffer()
+    show(io, "text/plain", b)
+    s = String(take!(io))
+    println(s)
+  
 
 end
 simple_Run()
+
+

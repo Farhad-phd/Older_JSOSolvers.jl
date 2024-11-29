@@ -1,8 +1,52 @@
-export TronSolverNLS
+export TronSolverNLS, TRONLSParameterSet
 
 const tronls_allowed_subsolvers = [CglsSolver, CrlsSolver, LsqrSolver, LsmrSolver]
 
 tron(nls::AbstractNLSModel; variant = :GaussNewton, kwargs...) = tron(Val(variant), nls; kwargs...)
+
+# Default algorithm parameter values
+const TRONLS_μ₀ = DefaultParameter(nlp -> eltype(nlp.meta.x0)(1 // 100), "T(1 / 100)")
+const TRONLS_μ₁ = DefaultParameter(nlp -> eltype(nlp.meta.x0)(1), "T(1)")
+const TRONLS_σ = DefaultParameter(nlp -> eltype(nlp.meta.x0)(10), "T(10)")
+
+"""
+    TRONLSParameterSet{T} <: AbstractParameterSet
+
+This structure designed for `tron` regroups the following parameters:
+  - `μ₀`: algorithm parameter in (0, 0.5).
+  - `μ₁`: algorithm parameter in (0, +∞).
+  - `σ`: algorithm parameter in (1, +∞).
+
+An additional constructor is
+
+    TRONLSParameterSet(nlp: kwargs...)
+
+where the kwargs are the parameters above.
+
+Default values are:
+  - `μ₀::T = $(TRONLS_μ₀)`
+  - `μ₁::T = $(TRONLS_μ₁)`
+  - `σ::T = $(TRONLS_σ)`
+"""
+struct TRONLSParameterSet{T} <: AbstractParameterSet
+  μ₀::Parameter{T, RealInterval{T}}
+  μ₁::Parameter{T, RealInterval{T}}
+  σ::Parameter{T, RealInterval{T}}
+end
+
+# add a default constructor
+function TRONLSParameterSet(
+  nlp::AbstractNLPModel{T};
+  μ₀::T = get(TRONLS_μ₀, nlp),
+  μ₁::T = get(TRONLS_μ₁, nlp),
+  σ::T = get(TRONLS_σ, nlp),
+) where {T}
+  TRONLSParameterSet(
+    Parameter(μ₀, RealInterval(T(0), T(1 // 2), lower_open = true)),
+    Parameter(μ₁, RealInterval(T(0), T(Inf), lower_open = true)),
+    Parameter(σ, RealInterval(T(1), T(Inf), lower_open = true)),
+  )
+end
 
 """
     tron(nls; kwargs...)
@@ -21,16 +65,16 @@ For advanced usage, first define a `TronSolverNLS` to preallocate the memory use
 The keyword arguments may include
 - `x::V = nlp.meta.x0`: the initial guess.
 - `subsolver_type::Symbol = LsmrSolver`: `Krylov.jl` method used as subproblem solver, see `JSOSolvers.tronls_allowed_subsolvers` for a list.
-- `μ₀::T = T(1e-2)`: algorithm parameter in (0, 0.5).
-- `μ₁::T = one(T)`: algorithm parameter in (0, +∞).
-- `σ::T = T(10)`: algorithm parameter in (1, +∞).
+- `μ₀::T = $(TRONLS_μ₀)`: algorithm parameter, see [`TRONLSParameterSet`](@ref).
+- `μ₁::T = $(TRONLS_μ₁)`: algorithm parameter, see [`TRONLSParameterSet`](@ref).
+- `σ::T = $(TRONLS_σ)`: algorithm parameter, see [`TRONLSParameterSet`](@ref).
 - `max_eval::Int = -1`: maximum number of objective function evaluations.
 - `max_time::Float64 = 30.0`: maximum time limit in seconds.
 - `max_iter::Int = typemax(Int)`: maximum number of iterations.
 - `max_cgiter::Int = 50`: subproblem iteration limit.
 - `cgtol::T = T(0.1)`: subproblem tolerance.
 - `atol::T = √eps(T)`: absolute tolerance.
-- `rtol::T = √eps(T)`: relative tolerance, the algorithm stops when ‖∇f(xᵏ)‖ ≤ atol + rtol * ‖∇f(x⁰)‖.
+- `rtol::T = √eps(T)`: relative tolerance, the algorithm stops when ‖x - Proj(x - ∇f(xᵏ))‖ ≤ atol + rtol * ‖∇f(x⁰)‖. Proj denotes here the projection over the bounds.
 - `Fatol::T = √eps(T)`: absolute tolerance on the residual.
 - `Frtol::T = eps(T)`: relative tolerance on the residual, the algorithm stops when ‖F(xᵏ)‖ ≤ Fatol + Frtol * ‖F(x⁰)‖.
 - `verbose::Int = 0`: if > 0, display iteration details every `verbose` iteration.
@@ -42,20 +86,7 @@ The keyword arguments of `TronSolverNLS` are passed to the [`TRONTrustRegion`](h
 The value returned is a `GenericExecutionStats`, see `SolverCore.jl`.
 
 # Callback
-The callback is called at each iteration.
-The expected signature of the callback is `callback(nlp, solver, stats)`, and its output is ignored.
-Changing any of the input arguments will affect the subsequent iterations.
-In particular, setting `stats.status = :user` will stop the algorithm.
-All relevant information should be available in `nlp` and `solver`.
-Notably, you can access, and modify, the following:
-- `solver.x`: current iterate;
-- `solver.gx`: current gradient;
-- `stats`: structure holding the output of the algorithm (`GenericExecutionStats`), which contains, among other things:
-  - `stats.dual_feas`: norm of current gradient;
-  - `stats.iter`: current iteration counter;
-  - `stats.objective`: current objective function value;
-  - `stats.status`: current status of the algorithm. Should be `:unknown` unless the algorithm attained a stopping criterion. Changing this to anything will stop the algorithm, but you should use `:user` to properly indicate the intention.
-  - `stats.elapsed_time`: elapsed time in seconds.
+$(Callback_docstring)
 
 # References
 This is an adaptation for bound-constrained nonlinear least-squares problems of the TRON method described in
@@ -116,10 +147,14 @@ mutable struct TronSolverNLS{
 
   AZ::Aop
   ls_subsolver::Sub
+  params::TRONLSParameterSet{T}
 end
 
 function TronSolverNLS(
   nlp::AbstractNLSModel{T, V};
+  μ₀::T = get(TRONLS_μ₀, nlp),
+  μ₁::T = get(TRONLS_μ₁, nlp),
+  σ::T = get(TRONLS_σ, nlp),
   subsolver_type::Type{<:KrylovSolver} = LsmrSolver,
   max_radius::T = min(one(T) / sqrt(2 * eps(T)), T(100)),
   kwargs...,
@@ -127,6 +162,7 @@ function TronSolverNLS(
   subsolver_type in tronls_allowed_subsolvers ||
     error("subproblem solver must be one of $(tronls_allowed_subsolvers)")
 
+  params = TRONLSParameterSet(nlp; μ₀ = μ₀, μ₁ = μ₁, σ = σ)
   nvar = nlp.meta.nvar
   nequ = nlp.nls_meta.nequ
   x = V(undef, nvar)
@@ -177,6 +213,7 @@ function TronSolverNLS(
     ls_op,
     AZ,
     ls_subsolver,
+    params,
   )
 end
 
@@ -195,13 +232,23 @@ end
   ::Val{:GaussNewton},
   nlp::AbstractNLSModel{T, V};
   x::V = nlp.meta.x0,
+  μ₀::Real = get(TRONLS_μ₀, nlp),
+  μ₁::Real = get(TRONLS_μ₁, nlp),
+  σ::Real = get(TRONLS_σ, nlp),
   subsolver_type::Type{<:KrylovSolver} = LsmrSolver,
   kwargs...,
 ) where {T, V}
   dict = Dict(kwargs)
   subsolver_keys = intersect(keys(dict), tron_keys)
   subsolver_kwargs = Dict(k => dict[k] for k in subsolver_keys)
-  solver = TronSolverNLS(nlp, subsolver_type = subsolver_type; subsolver_kwargs...)
+  solver = TronSolverNLS(
+    nlp,
+    μ₀ = μ₀,
+    μ₁ = μ₁,
+    σ = σ,
+    subsolver_type = subsolver_type;
+    subsolver_kwargs...,
+  )
   for k in subsolver_keys
     pop!(dict, k)
   end
@@ -214,9 +261,6 @@ function SolverCore.solve!(
   stats::GenericExecutionStats{T, V};
   callback = (args...) -> nothing,
   x::V = nlp.meta.x0,
-  μ₀::Real = T(1e-2),
-  μ₁::Real = one(T),
-  σ::Real = T(10),
   max_eval::Int = -1,
   max_iter::Int = typemax(Int),
   max_time::Real = 30.0,
@@ -235,6 +279,11 @@ function SolverCore.solve!(
   if !(unconstrained(nlp) || bound_constrained(nlp))
     error("tron should only be called for unconstrained or bound-constrained problems")
   end
+
+  # parameters
+  μ₀ = value(solver.params.μ₀)
+  μ₁ = value(solver.params.μ₁)
+  σ = value(solver.params.σ)
 
   reset!(stats)
   ℓ = nlp.meta.lvar
@@ -340,6 +389,7 @@ function SolverCore.solve!(
       u,
       As,
       max_cgiter = max_cgiter,
+      max_time = max_time - stats.elapsed_time,
       subsolver_verbose = subsolver_verbose,
     )
 
@@ -564,7 +614,7 @@ end
 
 """
 
-    projected_gauss_newton!(solver, x, A, Fx, Δ, gctol, s, max_cgiter, ℓ, u; max_cgiter = 50, subsolver_verbose = 0)
+    projected_gauss_newton!(solver, x, A, Fx, Δ, gctol, s, max_cgiter, ℓ, u; max_cgiter = 50, max_time = Inf, subsolver_verbose = 0)
 
 Compute an approximate solution `d` for
 
@@ -585,8 +635,10 @@ function projected_gauss_newton!(
   u::AbstractVector{T},
   As::AbstractVector{T};
   max_cgiter::Int = 50,
+  max_time::Float64 = Inf,
   subsolver_verbose = 0,
 ) where {T <: Real}
+  start_time, elapsed_time = time(), 0.0
   n = length(x)
   status = ""
 
@@ -602,13 +654,11 @@ function projected_gauss_newton!(
   Fxnorm = norm(Fx)
 
   # Projected Newton Step
-  exit_optimal = false
-  exit_pcg = false
-  exit_itmax = false
+  exit_optimal, exit_pcg, exit_itmax, exit_time = false, false, false, false
   iters = 0
   x .= x .+ s
   project!(x, x, ℓ, u)
-  while !(exit_optimal || exit_pcg || exit_itmax)
+  while !(exit_optimal || exit_pcg || exit_itmax || exit_time)
     active!(ifix, x, ℓ, u)
     if sum(ifix) == n
       exit_optimal = true
@@ -627,6 +677,7 @@ function projected_gauss_newton!(
       radius = Δ,
       rtol = cgtol,
       atol = zero(T),
+      timemax = max_time - elapsed_time,
       verbose = subsolver_verbose,
     )
 
@@ -650,13 +701,21 @@ function projected_gauss_newton!(
     elseif iters >= max_cgiter
       exit_itmax = true
     end
+
+    elapsed_time = time() - start_time
+    exit_time = elapsed_time >= max_time
   end
+
   status = if exit_optimal
     "stationary point found"
+  elseif exit_pcg
+    "on trust-region boundary"
   elseif exit_itmax
     "maximum number of iterations"
+  elseif exit_time
+    "time limit exceeded"
   else
-    status # on trust-region
+    status # unknown
   end
 
   return status

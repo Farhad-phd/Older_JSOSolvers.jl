@@ -1,9 +1,53 @@
 #  Some parts of this code were adapted from
 # https://github.com/PythonOptimizers/NLP.py/blob/develop/nlp/optimize/tron.py
 
-export tron, TronSolver
+export tron, TronSolver, TRONParameterSet
 
 tron(nlp::AbstractNLPModel; variant = :Newton, kwargs...) = tron(Val(variant), nlp; kwargs...)
+
+# Default algorithm parameter values
+const TRON_μ₀ = DefaultParameter(nlp -> eltype(nlp.meta.x0)(1 // 100), "T(1 / 100)")
+const TRON_μ₁ = DefaultParameter(nlp -> eltype(nlp.meta.x0)(1), "T(1)")
+const TRON_σ = DefaultParameter(nlp -> eltype(nlp.meta.x0)(10), "T(10)")
+
+"""
+    TRONParameterSet{T} <: AbstractParameterSet
+
+This structure designed for `tron` regroups the following parameters:
+  - `μ₀::T`: algorithm parameter in (0, 0.5).
+  - `μ₁::T`: algorithm parameter in (0, +∞).
+  - `σ::T`: algorithm parameter in (1, +∞).
+
+An additional constructor is
+
+    TRONParameterSet(nlp: kwargs...)
+
+where the kwargs are the parameters above.
+
+Default values are:
+  - `μ₀::T = $(TRON_μ₀)`
+  - `μ₁::T = $(TRON_μ₁)`
+  - `σ::T = $(TRON_σ)`
+"""
+struct TRONParameterSet{T} <: AbstractParameterSet
+  μ₀::Parameter{T, RealInterval{T}}
+  μ₁::Parameter{T, RealInterval{T}}
+  σ::Parameter{T, RealInterval{T}}
+end
+
+# add a default constructor
+function TRONParameterSet(
+  nlp::AbstractNLPModel{T};
+  μ₀::T = get(TRON_μ₀, nlp),
+  μ₁::T = get(TRON_μ₁, nlp),
+  σ::T = get(TRON_σ, nlp),
+) where {T}
+  TRONParameterSet(
+    Parameter(μ₀, RealInterval(T(0), T(1 // 2), lower_open = true)),
+    Parameter(μ₁, RealInterval(T(0), T(Inf), lower_open = true)),
+    Parameter(σ, RealInterval(T(1), T(Inf), lower_open = true)),
+  )
+end
 
 """
     tron(nlp; kwargs...)
@@ -21,9 +65,9 @@ For advanced usage, first define a `TronSolver` to preallocate the memory used i
 - `nlp::AbstractNLPModel{T, V}` represents the model to solve, see `NLPModels.jl`.
 The keyword arguments may include
 - `x::V = nlp.meta.x0`: the initial guess.
-- `μ₀::T = T(1e-2)`: algorithm parameter in (0, 0.5).
-- `μ₁::T = one(T)`: algorithm parameter in (0, +∞).
-- `σ::T = T(10)`: algorithm parameter in (1, +∞).
+- `μ₀::T = $(TRON_μ₀)`: algorithm parameter, see [`TRONParameterSet`](@ref).
+- `μ₁::T = $(TRON_μ₁)`: algorithm parameter, see [`TRONParameterSet`](@ref).
+- `σ::T = $(TRON_σ)`: algorithm parameter, see [`TRONParameterSet`](@ref).
 - `max_eval::Int = -1`: maximum number of objective function evaluations.
 - `max_time::Float64 = 30.0`: maximum time limit in seconds.
 - `max_iter::Int = typemax(Int)`: maximum number of iterations.
@@ -31,7 +75,7 @@ The keyword arguments may include
 - `use_only_objgrad::Bool = false`: If `true`, the algorithm uses only the function `objgrad` instead of `obj` and `grad`.
 - `cgtol::T = T(0.1)`: subproblem tolerance.
 - `atol::T = √eps(T)`: absolute tolerance.
-- `rtol::T = √eps(T)`: relative tolerance, the algorithm stops when ‖∇f(xᵏ)‖ ≤ atol + rtol * ‖∇f(x⁰)‖.
+- `rtol::T = √eps(T)`: relative tolerance, the algorithm stops when ‖x - Proj(x - ∇f(xᵏ))‖ ≤ atol + rtol * ‖∇f(x⁰)‖. Proj denotes here the projection over the bounds.
 - `verbose::Int = 0`: if > 0, display iteration details every `verbose` iteration.
 - `subsolver_verbose::Int = 0`: if > 0, display iteration information every `subsolver_verbose` iteration of the subsolver.
 
@@ -41,20 +85,7 @@ The keyword arguments of `TronSolver` are passed to the [`TRONTrustRegion`](http
 The value returned is a `GenericExecutionStats`, see `SolverCore.jl`.
 
 # Callback
-The callback is called at each iteration.
-The expected signature of the callback is `callback(nlp, solver, stats)`, and its output is ignored.
-Changing any of the input arguments will affect the subsequent iterations.
-In particular, setting `stats.status = :user` will stop the algorithm.
-All relevant information should be available in `nlp` and `solver`.
-Notably, you can access, and modify, the following:
-- `solver.x`: current iterate;
-- `solver.gx`: current gradient;
-- `stats`: structure holding the output of the algorithm (`GenericExecutionStats`), which contains, among other things:
-  - `stats.dual_feas`: norm of current gradient;
-  - `stats.iter`: current iteration counter;
-  - `stats.objective`: current objective function value;
-  - `stats.status`: current status of the algorithm. Should be `:unknown` unless the algorithm has attained a stopping criterion. Changing this to anything will stop the algorithm, but you should use `:user` to properly indicate the intention.
-  - `stats.elapsed_time`: elapsed time in seconds.
+$(Callback_docstring)
 
 # References
 TRON is described in
@@ -111,13 +142,18 @@ mutable struct TronSolver{
   cg_op::LinearOperator{T}
 
   ZHZ::Aop
+  params::TRONParameterSet{T}
 end
 
 function TronSolver(
   nlp::AbstractNLPModel{T, V};
+  μ₀::T = get(TRON_μ₀, nlp),
+  μ₁::T = get(TRON_μ₁, nlp),
+  σ::T = get(TRON_σ, nlp),
   max_radius::T = min(one(T) / sqrt(2 * eps(T)), T(100)),
   kwargs...,
 ) where {T, V <: AbstractVector{T}}
+  params = TRONParameterSet(nlp; μ₀ = μ₀, μ₁ = μ₁, σ = σ)
   nvar = nlp.meta.nvar
   x = V(undef, nvar)
   xc = V(undef, nvar)
@@ -158,6 +194,7 @@ function TronSolver(
     cg_op_diag,
     cg_op,
     ZHZ,
+    params,
   )
 end
 
@@ -178,12 +215,15 @@ end
   ::Val{:Newton},
   nlp::AbstractNLPModel{T, V};
   x::V = nlp.meta.x0,
+  μ₀::T = get(TRON_μ₀, nlp),
+  μ₁::T = get(TRON_μ₁, nlp),
+  σ::T = get(TRON_σ, nlp),
   kwargs...,
 ) where {T, V}
   dict = Dict(kwargs)
   subsolver_keys = intersect(keys(dict), tron_keys)
   subsolver_kwargs = Dict(k => dict[k] for k in subsolver_keys)
-  solver = TronSolver(nlp; subsolver_kwargs...)
+  solver = TronSolver(nlp; μ₀ = μ₀, μ₁ = μ₁, σ = σ, subsolver_kwargs...)
   for k in subsolver_keys
     pop!(dict, k)
   end
@@ -196,9 +236,6 @@ function SolverCore.solve!(
   stats::GenericExecutionStats{T, V};
   callback = (args...) -> nothing,
   x::V = nlp.meta.x0,
-  μ₀::T = T(1e-2),
-  μ₁::T = one(T),
-  σ::T = T(10),
   max_eval::Int = -1,
   max_iter::Int = typemax(Int),
   max_time::Float64 = 30.0,
@@ -216,6 +253,11 @@ function SolverCore.solve!(
   if !(unconstrained(nlp) || bound_constrained(nlp))
     error("tron should only be called for unconstrained or bound-constrained problems")
   end
+
+  # parameters
+  μ₀ = value(solver.params.μ₀)
+  μ₁ = value(solver.params.μ₁)
+  σ = value(solver.params.σ)
 
   reset!(stats)
   ℓ = nlp.meta.lvar
@@ -315,6 +357,7 @@ function SolverCore.solve!(
       s,
       Hs,
       max_cgiter = max_cgiter,
+      max_time = max_time - stats.elapsed_time,
       subsolver_verbose = subsolver_verbose,
     )
 
@@ -402,7 +445,8 @@ function SolverCore.solve!(
   stats
 end
 
-"""`s = projected_line_search!(x, H, g, d, ℓ, u, Hs; μ₀ = 1e-2)`
+"""
+    s = projected_line_search!(x, H, g, d, ℓ, u, Hs, μ₀)
 
 Performs a projected line search, searching for a step size `t` such that
 
@@ -419,8 +463,8 @@ function projected_line_search!(
   ℓ::AbstractVector{T},
   u::AbstractVector{T},
   Hs::AbstractVector{T},
-  s::AbstractVector{T};
-  μ₀::Real = T(1e-2),
+  s::AbstractVector{T},
+  μ₀::Real,
 ) where {T <: Real}
   α = one(T)
   _, brkmin, _ = breakpoints(x, d, ℓ, u)
@@ -472,9 +516,9 @@ function cauchy!(
   u::AbstractVector{T},
   s::AbstractVector{T},
   Hs::AbstractVector{T};
-  μ₀::Real = T(1e-2),
-  μ₁::Real = one(T),
-  σ::Real = T(10),
+  μ₀::Real = T(TRON_μ₀),
+  μ₁::Real = T(TRON_μ₁),
+  σ::Real = T(TRON_σ),
 ) where {T <: Real}
   # TODO: Use brkmin to care for g direction
   s .= .-g
@@ -538,7 +582,7 @@ end
 
 """
 
-    projected_newton!(solver, x, H, g, Δ, cgtol, ℓ, u, s, Hs; max_cgiter = 50, subsolver_verbose = 0)
+    projected_newton!(solver, x, H, g, Δ, cgtol, ℓ, u, s, Hs; max_time = Inf, max_cgiter = 50, subsolver_verbose = 0)
 
 Compute an approximate solution `d` for
 
@@ -559,8 +603,10 @@ function projected_newton!(
   s::AbstractVector{T},
   Hs::AbstractVector{T};
   max_cgiter::Int = 50,
+  max_time::Float64 = Inf,
   subsolver_verbose = 0,
 ) where {T <: Real}
+  start_time, elapsed_time = time(), 0.0
   n = length(x)
   status = ""
 
@@ -572,13 +618,11 @@ function projected_newton!(
   mul!(Hs, H, s)
 
   # Projected Newton Step
-  exit_optimal = false
-  exit_pcg = false
-  exit_itmax = false
+  exit_optimal, exit_pcg, exit_itmax, exit_time = false, false, false, false
   iters = 0
   x .= x .+ s
   project!(x, x, ℓ, u)
-  while !(exit_optimal || exit_pcg || exit_itmax)
+  while !(exit_optimal || exit_pcg || exit_itmax || exit_time)
     active!(ifix, x, ℓ, u)
     if sum(ifix) == n
       exit_optimal = true
@@ -600,6 +644,7 @@ function projected_newton!(
       radius = Δ,
       rtol = cgtol,
       atol = zero(T),
+      timemax = max_time - elapsed_time,
       verbose = subsolver_verbose,
     )
 
@@ -609,7 +654,7 @@ function projected_newton!(
 
     # Projected line search
     cgs_rhs .*= -1
-    projected_line_search!(x, ZHZ, cgs_rhs, st, ℓ, u, Hs, w)
+    projected_line_search!(x, ZHZ, cgs_rhs, st, ℓ, u, Hs, w, value(solver.params.μ₀))
     s .+= w
 
     mul!(Hs, H, s)
@@ -627,13 +672,21 @@ function projected_newton!(
     elseif iters >= max_cgiter
       exit_itmax = true
     end
+
+    elapsed_time = time() - start_time
+    exit_time = elapsed_time >= max_time
   end
+
   status = if exit_optimal
     "stationary point found"
+  elseif exit_pcg
+    "on trust-region boundary"
   elseif exit_itmax
     "maximum number of iterations"
+  elseif exit_time
+    "time limit exceeded"
   else
-    status # on trust-region
+    status # unknown
   end
 
   return status

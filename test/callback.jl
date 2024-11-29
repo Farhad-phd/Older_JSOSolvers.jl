@@ -41,6 +41,11 @@ using ADNLPModels, JSOSolvers, LinearAlgebra, Logging #, Plots
     tron(nlp, callback = cb)
   end
   @test stats.iter == 8
+
+  stats = with_logger(NullLogger()) do
+    fomo(nlp, callback = cb)
+  end
+  @test stats.iter == 8
 end
 
 @testset "Test callback for NLS" begin
@@ -68,7 +73,7 @@ end
   nlp = ADNLPModel(f, [-1.2; 1.0])
   function cb(nlp, solver, stats)
     if stats.iter == 4
-      @test solver.σ > 0.0
+      @test solver.α > 0.0
       stats.status = :user
     end
   end

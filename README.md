@@ -27,7 +27,7 @@ This package provides an implementation of four classic algorithms for unconstra
     > DOI: [10.1007/BF01589116](https://doi.org/10.1007/BF01589116)
 
     
-- `R2`: a first-order quadratic regularization method for unconstrained optimization;
+<!-- - `R2`: a first-order quadratic regularization method for unconstrained optimization; -->
 <!-- - `R2N`: #TODO -->
 - `pR2`: an inexact version of the first-order quadratic regularization method for unconstrained optimization;
 - `pR2N`: an inexact second-order quadratic regularization method for unconstrained optimization with shifted L-BFGS systems;

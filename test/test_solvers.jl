@@ -110,7 +110,6 @@ function tests()
         ("trunk+cg", (nlp; kwargs...) -> trunk(nlp, subsolver_type = CgSolver; kwargs...)),
         ("lbfgs", lbfgs),
         ("tron", tron),
-        ("R2", R2),
         ("fomo_r2", fomo),
         ("fomo_tr", (nlp; kwargs...) -> fomo(nlp, step_backend = JSOSolvers.tr_step(); kwargs...)),
       ]
@@ -118,7 +117,6 @@ function tests()
         multiprecision_nlp(solver, :unc)
       end
       @testset "$name : nonmonotone configuration" for (name, solver) in [
-        ("R2", (nlp; kwargs...) -> R2(nlp, M = 2; kwargs...)),
         ("fomo_r2", (nlp; kwargs...) -> fomo(nlp, M = 2; kwargs...)),
         (
           "fomo_tr",

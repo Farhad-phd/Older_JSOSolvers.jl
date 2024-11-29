@@ -10,7 +10,7 @@ function consistency()
   @testset "Consistency" begin
     args = Pair{Symbol, Number}[:atol => 1e-6, :rtol => 1e-6, :max_eval => 20000, :max_time => 60.0]
 
-    @testset "NLP with $mtd" for mtd in [trunk, lbfgs, tron, R2, fomo]
+    @testset "NLP with $mtd" for mtd in [trunk, lbfgs, tron, fomo]
       with_logger(NullLogger()) do
         reset!(unlp)
         stats = mtd(unlp; args...)

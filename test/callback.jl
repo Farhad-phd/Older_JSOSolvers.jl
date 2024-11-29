@@ -12,10 +12,10 @@ using ADNLPModels, JSOSolvers, LinearAlgebra, Logging #, Plots
       stats.status = :user
     end
   end
-  stats = with_logger(NullLogger()) do
-    R2(nlp, callback = cb)
-  end
-  @test stats.iter == 8
+  # stats = with_logger(NullLogger()) do
+  #   R2(nlp, callback = cb)
+  # end
+  # @test stats.iter == 8
 
   stats = with_logger(NullLogger()) do
     pR2(nlp, callback = cb)

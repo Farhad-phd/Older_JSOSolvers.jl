@@ -1,10 +1,9 @@
 using LinearAlgebra
 using LinearOperators
-export R2N, R2NSolver
+export R2NLS, R2NLSSolver
 export ShiftedLBFGSSolver
-#TODO check isa(nlp, LSR1Model) and updated op
 
-# const R2N_allowed_subsolvers = [CglsSolver, CrlsSolver, LsqrSolver, LsmrSolver, minres]
+# const R2NLS_allowed_subsolvers = [CglsSolver, CrlsSolver, LsqrSolver, LsmrSolver, minres]
 
 #TODO do I export ShiftedLBFGSSolver? in seprate file
 # NOTES: the memeory can be define in LBFGSModels by using mem = 5
@@ -16,13 +15,13 @@ struct ShiftedLBFGSSolver <: AbstractShiftedLBFGSSolver
 end
 
 """
-    R2N(nlp; kwargs...)
+    R2NLS(nlp; kwargs...)
 
 A first-order quadratic regularization method for unconstrained optimization.
 
-For advanced usage, first define a `R2NSolver` to preallocate the memory used in the algorithm, and then call `solve!`:
+For advanced usage, first define a `R2NLSSolver` to preallocate the memory used in the algorithm, and then call `solve!`:
 
-    solver = R2NSolver(nlp)
+    solver = R2NLSSolver(nlp)
     solve!(solver, nlp; kwargs...)
 
 # Arguments
@@ -34,11 +33,11 @@ For advanced usage, first define a `R2NSolver` to preallocate the memory used in
 - `rtol::T = √eps(T)`: relative tolerance: algorithm stops when ‖∇f(xᵏ)‖ ≤ atol + rtol * ‖∇f(x⁰)‖.
 - `η1 = eps(T)^(1/4)`, `η2 = T(0.95)`: step acceptance parameters.
 - `γ1 = T(1/2)`, `γ2 = 1/γ1`: regularization update parameters.
-- `σmin = eps(T)`: step parameter for R2N algorithm.
+- `σmin = eps(T)`: step parameter for R2NLS algorithm.
 - `max_eval::Int = -1`: maximum number of evaluation of the objective function.
 - `max_time::Float64 = 30.0`: maximum time limit in seconds.
 - `max_iter::Int = typemax(Int)`: maximum number of iterations.
-- `β = T(0) ∈ [0,1]` is the constant in the momentum term. If `β == 0`, R2N does not use momentum.
+- `β = T(0) ∈ [0,1]` is the constant in the momentum term. If `β == 0`, R2NLS does not use momentum.
 - `verbose::Int = 0`: if > 0, display iteration details every `verbose` iteration.
 - `subsolver_type::Union{Type{<:KrylovSolver}, Type{ShiftedLBFGSSolver}} = ShiftedLBFGSSolver`: the subsolver to solve the shifted system. Default is `JSOSolvers.ShiftedLBFGSSolver` which is the exact solver.
 - `subsolver_verbose::Int = 0`: if > 0, display iteration information every `subsolver_verbose` iteration of the subsolver if CG is selected.
@@ -66,7 +65,7 @@ Notably, you can access, and modify, the following:
 ```jldoctest
 using JSOSolvers, ADNLPModels
 nlp = ADNLPModel(x -> sum(x.^2), ones(3))
-stats = R2N(nlp)
+stats = R2NLS(nlp)
 
 # output
 
@@ -76,7 +75,7 @@ stats = R2N(nlp)
 ```jldoctest
 using JSOSolvers, ADNLPModels
 nlp = ADNLPModel(x -> sum(x.^2), ones(3))
-solver = R2NSolver(nlp);
+solver = R2NLSSolver(nlp);
 stats = solve!(solver, nlp)
 
 # output
@@ -84,7 +83,7 @@ stats = solve!(solver, nlp)
 "Execution stats: first-order stationary"
 ```
 """
-mutable struct R2NSolver{
+mutable struct R2NLSSolver{
   T,
   V,
   Op <: AbstractLinearOperator{T},
@@ -103,10 +102,10 @@ mutable struct R2NSolver{
   cgtol::T
 end
 
-function R2NSolver(
+function R2NLSSolver(
   nlp::AbstractNLPModel{T, V};
   non_mono_size = 1,
-  subsolver_type::Union{Type{<:KrylovSolver}, Type{ShiftedLBFGSSolver}} = MinresSolver,
+  subsolver_type::Union{Type{<:KrylovSolver}, Type{ShiftedLBFGSSolver}} = ShiftedLBFGSSolver,
 ) where {T, V}
   nvar = nlp.meta.nvar
   x = V(undef, nvar)
@@ -124,14 +123,14 @@ function R2NSolver(
     isa(subsolver_type, Type{ShiftedLBFGSSolver}) ? subsolver_type() : subsolver_type(nvar, nvar, V)
 
   Sub = typeof(subsolver)
-  return R2NSolver{T, V, Op, Sub}(x, cx, gx, gn, σ, H, Hs, s, obj_vec, subsolver, cgtol)
+  return R2NLSSolver{T, V, Op, Sub}(x, gx, cx, σ, H, s, gn, obj_vec, subsolver,cgtol)
 end
 
-function SolverCore.reset!(solver::R2NSolver{T}) where {T}
+function SolverCore.reset!(solver::R2NLSSolver{T}) where {T}
   fill!(solver.obj_vec, typemin(T))
   solver
 end
-function SolverCore.reset!(solver::R2NSolver{T}, ::AbstractNLPModel) where {T}
+function SolverCore.reset!(solver::R2NLSSolver{T}, ::AbstractNLPModel) where {T}
   fill!(solver.obj_vec, typemin(T))
   @assert (length(solver.gn) == 0) || isa(nlp, QuasiNewtonModel)
   solver.H = hess_op!(nlp, solver.x, solver.Hs)
@@ -139,20 +138,20 @@ function SolverCore.reset!(solver::R2NSolver{T}, ::AbstractNLPModel) where {T}
   solver
 end
 
-@doc (@doc R2NSolver) function R2N(
+@doc (@doc R2NLSSolver) function R2NLS(
   nlp::AbstractNLPModel{T, V};
-  subsolver_type::Union{Type{<:KrylovSolver}, Type{ShiftedLBFGSSolver}} = MinresSolver,
+  subsolver_type::Union{Type{<:KrylovSolver}, Type{ShiftedLBFGSSolver}} = minres,
   non_mono_size = 1,
   kwargs...,
 ) where {T, V}
-  solver = R2NSolver(nlp, non_mono_size = non_mono_size, subsolver_type = subsolver_type)
+  solver = R2NLSSolver(nlp, non_mono_size = non_mono_size, subsolver_type = subsolver_type)
   return solve!(solver, nlp; non_mono_size = non_mono_size, kwargs...) 
 end
 
 
 
 function SolverCore.solve!(
-  solver::R2NSolver{T, V},
+  solver::R2NLSSolver{T, V},
   nlp::AbstractNLPModel{T, V},
   stats::GenericExecutionStats{T, V};
   callback = (args...) -> nothing,
@@ -171,11 +170,11 @@ function SolverCore.solve!(
   subsolver_verbose::Int = 0,
   non_mono_size = 1,
 ) where {T, V}
-  unconstrained(nlp) || error("R2N should only be called on unconstrained problems.")
+  unconstrained(nlp) || error("R2NLS should only be called on unconstrained problems.")
   if non_mono_size < 1
     error("non_mono_size must be greater than or equal to 1")
   end
-  if (solver.subsolver_type isa ShiftedLBFGSSolver && !isa(nlp,LBFGSModel) )
+  if !(solver.subsolver_type isa ShiftedLBFGSSolver  && !isa(nlp,LBFGSModel) )
     error("Unsupported subsolver type, ShiftedLBFGSSolver is only can be used by LBFGSModel")
   end
   if isa(nlp, LSR1Model)
@@ -202,7 +201,6 @@ function SolverCore.solve!(
   set_objective!(stats, obj(nlp, x))
 
   grad!(nlp, x, ∇fk)
-  isa(nlp, QuasiNewtonModel) && (∇fn .= ∇fk)
   norm_∇fk = norm(∇fk)
   set_dual_residual!(stats, norm_∇fk)
 
@@ -244,13 +242,9 @@ function SolverCore.solve!(
 
   while !done
     ∇fk .*= -1
-    subsolve!(solver,nlp, s, H, ∇fk, 0.0, cgtol, n, σk, subsolver_verbose)
-    slope = dot(n, s, ∇fk) # = -dot(s, ∇fk) but ∇fk is negative
-    mul!(Hs, H, s)
-    curv = dot(n, s, Hs)
-    ΔTk = (slope + curv) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
-    # ΔTk = (dot(s, ∇fk) + σk * dot(s, s)) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
-    
+    subsolve!(solver, s, H, ∇fk, 0.0, cgtol, n, σk, subsolver_verbose)
+
+    ΔTk = (dot(s, ∇fk) + σk * dot(s, s)) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
     ck .= x
     ck .+= s
     fck = obj(nlp, ck)
@@ -278,14 +272,13 @@ function SolverCore.solve!(
     # Acceptance of the new candidate
     if ρk >= η1
       x .= ck
-      grad!(nlp, x, ∇fk)
-      if isa(nlp, QuasiNewtonModel)
-        ∇fn .-= ∇fk
-        ∇fn .*= -1  # = ∇f(xₖ₊₁) - ∇f(xₖ)
-        push!(nlp, s, ∇fn)
-        ∇fn .= ∇fk
-      end
+      #Update L-BFGS
+      grad!(nlp, x, ∇fn)
+      @. ∇fk = ∇fn + ∇fk # y = ∇f(xk+1) - ∇f(xk)  # the ∇fk is negative here
+      push!(H, s, ∇fk)
       set_objective!(stats, fck)
+      # grad!(nlp, x, ∇fk)
+      ∇fk .= ∇fn # copy ∇fn to ∇fk
       norm_∇fk = norm(∇fk)
     end
 
@@ -314,7 +307,12 @@ function SolverCore.solve!(
     solver.σ = σk
     callback(nlp, solver, stats) # cgtol needs to be updated in callback
     # cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * cgtol)) 
+
+    # Similar to pR2NLS
+    # ∇fk = solver.gx
+    # norm_∇fk = norm(∇fk)
     σk = solver.σ
+
     done = stats.status != :unknown
   end
 
@@ -322,10 +320,10 @@ function SolverCore.solve!(
   return stats
 end
 
-function subsolve!(R2N::R2NSolver,nlp , s, H, ∇f, atol, cgtol, n, σ, subsolver_verbose)
-  if R2N.subsolver_type isa KrylovSolver
+function subsolve!(R2NLS::R2NLSSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_verbose)
+  if R2NLS.subsolver_type isa KrylovSolver
     Krylov.solve!(
-      R2N.subsolver_type,
+      R2NLS.subsolver_type,
       (H + σ * I(n)), #TODO check with MINRES or can we use something better
       ∇f,
       atol = atol,
@@ -333,10 +331,10 @@ function subsolve!(R2N::R2NSolver,nlp , s, H, ∇f, atol, cgtol, n, σ, subsolve
       itmax = max(2 * n, 50),
       verbose = subsolver_verbose,
     )
-    s .= R2N.subsolver_type.x
-    # stas = R2N.subsolver_type.stats
-  elseif R2N.subsolver_type isa ShiftedLBFGSSolver
-    solve_shifted_system!(s, nlp.op, ∇f, σ)
+    s .= R2NLS.subsolver_type.x
+    # stas = R2NLS.subsolver_type.stats
+  elseif R2NLS.subsolver_type isa ShiftedLBFGSSolver
+    solve_shifted_system!(s, H, ∇f, σ)
   else
     error("Unsupported subsolver type")
   end

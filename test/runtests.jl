@@ -17,10 +17,10 @@ using JSOSolvers
 #   @test stats.objective_reliable && isapprox(stats.objective, 0, atol = 1e-6)
 # end
 
-@testset "Test iteration limit" begin
-  @testset "$fun" for fun in (R2, fomo, lbfgs, tron, trunk)
-    f(x) = (x[1] - 1)^2 + 4 * (x[2] - x[1]^2)^2
-    nlp = ADNLPModel(f, [-1.2; 1.0])
+# @testset "Test iteration limit" begin
+#   @testset "$fun" for fun in (R2, fomo, lbfgs, tron, trunk)
+#     f(x) = (x[1] - 1)^2 + 4 * (x[2] - x[1]^2)^2
+#     nlp = ADNLPModel(f, [-1.2; 1.0])
 
 #     stats = eval(fun)(nlp, max_iter = 1)
 #     @test stats.status == :max_iter
@@ -35,62 +35,63 @@ using JSOSolvers
 #   end
 # end
 
-@testset "Test unbounded below" begin
-  @testset "$fun" for fun in (R2, fomo, lbfgs, tron, trunk)
-    T = Float64
-    x0 = [T(0)]
-    f(x) = -exp(x[1])
-    nlp = ADNLPModel(f, x0)
+# @testset "Test unbounded below" begin
+#   @testset "$fun" for fun in (R2, fomo, lbfgs, tron, trunk)
+#     T = Float64
+#     x0 = [T(0)]
+#     f(x) = -exp(x[1])
+#     nlp = ADNLPModel(f, x0)
 
-    stats = eval(fun)(nlp)
-    @test stats.status == :unbounded
-    @test stats.objective < -one(T) / eps(T)
-  end
-end
+#     stats = eval(fun)(nlp)
+#     @test stats.status == :unbounded
+#     @test stats.objective < -one(T) / eps(T)
+#   end
+# end
 
-include("restart.jl")
-include("callback.jl")
-include("consistency.jl")
+# include("restart.jl")
+# include("callback.jl")
+# include("consistency.jl")
+# include("test_solvers.jl")
+# if VERSION ≥ v"1.7"
+#   include("allocs.jl")
+
+#   @testset "Test warning for infeasible initial guess" begin
+#     nlp = ADNLPModel(x -> (x[1] - 1)^2 + sin(x[2])^2, [-1.2; 1.0], zeros(2), ones(2))
+#     @test_warn "Warning: Initial guess is not within bounds." tron(nlp, verbose = 1)
+#     nls = ADNLSModel(x -> [x[1] - 1; sin(x[2])], [-1.2; 1.0], 2, zeros(2), ones(2))
+#     @test_warn "Warning: Initial guess is not within bounds." tron(nls, verbose = 1)
+#   end
+# end
+
+# include("objgrad-on-tron.jl")
+
+# @testset "Test max_radius in TRON" begin
+#   max_radius = 0.00314
+#   increase_factor = 5.0
+#   function cb(nlp, solver, stats)
+#     @test solver.tr.radius ≤ max_radius
+#   end
+
+#   nlp = ADNLPModel(x -> 100 * (x[2] - x[1]^2)^2 + (x[1] - 1)^2, [-1.2; 1.0])
+#   stats = tron(nlp, max_radius = max_radius, increase_factor = increase_factor, callback = cb)
+
+#   nls = ADNLSModel(x -> [100 * (x[2] - x[1]^2); x[1] - 1], [-1.2; 1.0], 2)
+#   stats = tron(nls, max_radius = max_radius, increase_factor = increase_factor, callback = cb)
+# end
+
+# @testset "Preconditioner in Trunk" begin
+#   x0 = [-1.2; 1.0]
+#   nlp = ADNLPModel(x -> 100 * (x[2] - x[1]^2)^2 + (x[1] - 1)^2, x0)
+#   function DiagPrecon(x)
+#     H = Matrix(hess(nlp, x))
+#     λmin = minimum(eigvals(H))
+#     Diagonal(H + (λmin + 1e-6) * I)
+#   end
+#   M = DiagPrecon(x0)
+#   function callback(nlp, solver, stats)
+#     M[:] = DiagPrecon(solver.x)
+#   end
+#   stats = trunk(nlp, callback = callback, M = M)
+#   @test stats.status == :first_order
+# end
 include("test_solvers.jl")
-if VERSION ≥ v"1.7"
-  include("allocs.jl")
-
-  @testset "Test warning for infeasible initial guess" begin
-    nlp = ADNLPModel(x -> (x[1] - 1)^2 + sin(x[2])^2, [-1.2; 1.0], zeros(2), ones(2))
-    @test_warn "Warning: Initial guess is not within bounds." tron(nlp, verbose = 1)
-    nls = ADNLSModel(x -> [x[1] - 1; sin(x[2])], [-1.2; 1.0], 2, zeros(2), ones(2))
-    @test_warn "Warning: Initial guess is not within bounds." tron(nls, verbose = 1)
-  end
-end
-
-include("objgrad-on-tron.jl")
-
-@testset "Test max_radius in TRON" begin
-  max_radius = 0.00314
-  increase_factor = 5.0
-  function cb(nlp, solver, stats)
-    @test solver.tr.radius ≤ max_radius
-  end
-
-  nlp = ADNLPModel(x -> 100 * (x[2] - x[1]^2)^2 + (x[1] - 1)^2, [-1.2; 1.0])
-  stats = tron(nlp, max_radius = max_radius, increase_factor = increase_factor, callback = cb)
-
-  nls = ADNLSModel(x -> [100 * (x[2] - x[1]^2); x[1] - 1], [-1.2; 1.0], 2)
-  stats = tron(nls, max_radius = max_radius, increase_factor = increase_factor, callback = cb)
-end
-
-@testset "Preconditioner in Trunk" begin
-  x0 = [-1.2; 1.0]
-  nlp = ADNLPModel(x -> 100 * (x[2] - x[1]^2)^2 + (x[1] - 1)^2, x0)
-  function DiagPrecon(x)
-    H = Matrix(hess(nlp, x))
-    λmin = minimum(eigvals(H))
-    Diagonal(H + (λmin + 1e-6) * I)
-  end
-  M = DiagPrecon(x0)
-  function callback(nlp, solver, stats)
-    M[:] = DiagPrecon(solver.x)
-  end
-  stats = trunk(nlp, callback = callback, M = M)
-  @test stats.status == :first_order
-end

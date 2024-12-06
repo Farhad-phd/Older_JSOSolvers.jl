@@ -323,10 +323,10 @@ function SolverCore.solve!(
 end
 
 function subsolve!(R2N::R2NSolver,nlp , s, H, ∇f, atol, cgtol, n, σ, subsolver_verbose)
-  if R2N.subsolver_type isa KrylovSolver
+  if R2N.subsolver_type isa CgSolver
     Krylov.solve!(
       R2N.subsolver_type,
-      (H + σ * I(n)), #TODO check with MINRES or can we use something better
+      (H + σ * I(n)), 
       ∇f,
       atol = atol,
       rtol = cgtol,
@@ -334,6 +334,17 @@ function subsolve!(R2N::R2NSolver,nlp , s, H, ∇f, atol, cgtol, n, σ, subsolve
       verbose = subsolver_verbose,
     )
     s .= R2N.subsolver_type.x
+    # stas = R2N.subsolver_type.stats
+  elseif R2N.subsolver_type isa MinaresSolver
+    s= minres(
+      H, #A
+      ∇f, #b 
+      λ= σ,
+      atol = atol,
+      rtol = cgtol,
+      itmax = max(2 * n, 50),
+      verbose = subsolver_verbose,
+    )
     # stas = R2N.subsolver_type.stats
   elseif R2N.subsolver_type isa ShiftedLBFGSSolver
     solve_shifted_system!(s, nlp.op, ∇f, σ)

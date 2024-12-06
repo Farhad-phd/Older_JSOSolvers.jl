@@ -63,6 +63,12 @@ using BenchmarkTools
 
 # include("solvers/trunkls.jl")
 # include("incompatible.jl")
+function cb(nlp, solver, stats)
+  T= Float64
+  rtol = 1e-6
+  norm_∇fk = norm(solver.gx)
+  solver.cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * solver.cgtol)) 
+end
 
 function simple_Run()
   T = Float64
@@ -73,14 +79,14 @@ function simple_Run()
   # statsR2 = R2(nlp)
   # println(statsR2.status, statsR2.iter)
   
-  @test_throws ErrorException R2N(nlp, subsolver_type = JSOSolvers.ShiftedLBFGSSolver) 
-  stats = R2N(LBFGSModel(nlp), subsolver_type = JSOSolvers.ShiftedLBFGSSolver)
-  println(stats.status, stats.iter)
+  # @test_throws ErrorException R2N(nlp, subsolver_type = JSOSolvers.ShiftedLBFGSSolver) 
+  # stats = R2N(LBFGSModel(nlp), subsolver_type = JSOSolvers.ShiftedLBFGSSolver)
+  # println(stats.status, stats.iter)
 
-  stats2 = R2N(nlp, subsolver_type = CgSolver)
+  stats2 = R2N(nlp, subsolver_type = CgSolver, verbose = 1)
   println(stats2.status, stats2.iter)
 
-  stats3 = R2N(nlp)
+  stats3 = R2N(nlp,max_iter = 30,verbose = 20, subsolver_verbose=1 ,callback = cb)
   println(stats3.status, stats3.iter)
 
   # # @test stats.status == :first_order

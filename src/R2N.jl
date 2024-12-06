@@ -109,7 +109,7 @@ function R2NSolver(
   subsolver_type::Union{Type{<:KrylovSolver}, Type{ShiftedLBFGSSolver}} = MinresSolver,
 ) where {T, V}
   nvar = nlp.meta.nvar
-  x = V(undef, nvar)
+  x = V(undef, nvar) # vs similar(nlp.meta.x0)
   cx = V(undef, nvar)
   gx = V(undef, nvar)
   gn = isa(nlp, QuasiNewtonModel) ? V(undef, nvar) : V(undef, 0)
@@ -244,7 +244,7 @@ function SolverCore.solve!(
     subsolve!(solver, s, H, ∇fk, 0.0, cgtol, n, σk, subsolver_verbose)
     slope = dot(n, s, ∇fk) # = -dot(s, ∇fk) but ∇fk is negative
     mul!(Hs, H, s)
-    curv = dot(n, s, Hs)
+    curv = dot(s, Hs)
     ΔTk = (slope + curv) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
     # ΔTk = (dot(s, ∇fk) + σk * dot(s, s)) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
 
@@ -319,8 +319,19 @@ function SolverCore.solve!(
   return stats
 end
 
-function subsolve!(R2N::R2NSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_verbose)
-  if R2N.subsolver_type isa CgSolver
+function subsolve!(R2N::R2NSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_verbose)  
+  if R2N.subsolver_type isa MinresSolver
+    minres!(
+      R2N.subsolver_type,
+      H, #A
+      ∇f, #b 
+      λ = σ,
+      # itmax = max(2 * n, 50),
+      verbose = subsolver_verbose,
+    )
+    s .= R2N.subsolver_type.x
+    # stas = R2N.subsolver_type.stats
+  elseif R2N.subsolver_type isa KrylovSolver
     Krylov.solve!(
       R2N.subsolver_type,
       (H + σ * I(n)),
@@ -332,17 +343,7 @@ function subsolve!(R2N::R2NSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_ver
     )
     s .= R2N.subsolver_type.x
     # stas = R2N.subsolver_type.stats
-  elseif R2N.subsolver_type isa MinresSolver
-    minres!(
-      R2N.subsolver_type,
-      H, #A
-      ∇f, #b 
-      λ = σ,
-      # itmax = max(2 * n, 50),
-      verbose = subsolver_verbose,
-    )
-    s .= R2N.subsolver_type.x
-    # stas = R2N.subsolver_type.stats
+
   elseif R2N.subsolver_type isa ShiftedLBFGSSolver
     solve_shifted_system!(s, H, ∇f, σ)
   else

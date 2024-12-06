@@ -83,10 +83,12 @@ function simple_Run()
   stats = R2N(LBFGSModel(nlp), subsolver_type = JSOSolvers.ShiftedLBFGSSolver)
   println(stats.status, stats.iter)
 
-  stats2 = R2N(nlp, subsolver_type = CgSolver, verbose = 1)
+  stats2 = R2N(nlp, subsolver_type = CgSolver)
   println(stats2.status, stats2.iter)
 
-  stats3 = R2N(LBFGSModel(nlp),max_iter = 30, verbose = 1 ,callback = cb)
+
+  
+  stats3 = R2N(LBFGSModel(nlp),max_iter = 30,callback = cb)
   println(stats3.status, stats3.iter)
 
   stats4= R2N(nlp)

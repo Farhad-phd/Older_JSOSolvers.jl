@@ -9,6 +9,9 @@ export ShiftedLBFGSSolver
 #TODO do I export ShiftedLBFGSSolver? in seprate file
 # NOTES: the memeory can be define in LBFGSModels by using mem = 5
 
+# const R2N_allowed_subsolvers = [CgLanczosShiftSolver, MinaresSolver, ShiftedLBFGSSolver]
+
+
 abstract type AbstractShiftedLBFGSSolver end
 
 struct ShiftedLBFGSSolver <: AbstractShiftedLBFGSSolver
@@ -176,11 +179,14 @@ function SolverCore.solve!(
   if (solver.subsolver_type isa ShiftedLBFGSSolver && !isa(nlp, LBFGSModel))
     error("Unsupported subsolver type, ShiftedLBFGSSolver is only can be used by LBFGSModel")
   end
-  if isa(nlp, LSR1Model)
-    @info "only solver allowed is trunked CG for LSR1Model"
-    solver.subsolver_type = CrSolver
-  end
-
+  #TODO make sure that we have a shifted solver for LSR1Model
+  # if isa(nlp, LSR1Model)
+  #   @info "only solver allowed is trunked CG for LSR1Model"
+  #   solver.subsolver_type = CrSolver
+  # end
+  #TODO 
+  # subsolver_type in R2N_allowed_subsolvers ||
+  #   error("subproblem solver must be one of $(R2N_allowed_subsolvers)")
   reset!(stats)
   start_time = time()
   set_time!(stats, 0.0)
@@ -326,7 +332,7 @@ function subsolve!(R2N::R2NSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_ver
       H, #A
       ∇f, #b 
       λ = σ,
-      # itmax = max(2 * n, 50),
+      itmax = 2*n,
       verbose = subsolver_verbose,
     )
     s .= R2N.subsolver_type.x
@@ -338,7 +344,7 @@ function subsolve!(R2N::R2NSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_ver
       ∇f,
       atol = atol,
       rtol = cgtol,
-      itmax = max(2 * n, 50),
+      itmax = 2*n,
       verbose = subsolver_verbose,
     )
     s .= R2N.subsolver_type.x

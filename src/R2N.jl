@@ -134,10 +134,10 @@ function SolverCore.reset!(solver::R2NSolver{T}) where {T}
   fill!(solver.obj_vec, typemin(T))
   solver
 end
-function SolverCore.reset!(solver::R2NSolver{T}, ::AbstractNLPModel) where {T}
+function SolverCore.reset!(solver::R2NSolver{T}, nlp::AbstractNLPModel) where {T}
   fill!(solver.obj_vec, typemin(T))
   @assert (length(solver.gn) == 0) || isa(nlp, QuasiNewtonModel)
-  solver.H = hess_op!(nlp, solver.x, solver.Hs)
+  solver.H = isa(nlp, QuasiNewtonModel) ? nlp.op : hess_op!(nlp, x, Hs)
   solver.cgtol = one(T)
   solver
 end
@@ -254,8 +254,8 @@ function SolverCore.solve!(
     ΔTk = (slope + curv) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
     # ΔTk = (dot(s, ∇fk) + σk * dot(s, s)) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
 
-    ck .= x
-    ck .+= s
+    ck .= x .+ s
+    # ck .+= s
     fck = obj(nlp, ck)
     if fck == -Inf
       set_status!(stats, :unbounded)
@@ -315,8 +315,8 @@ function SolverCore.solve!(
       ),
     )
     solver.σ = σk
+    cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * cgtol)) 
     callback(nlp, solver, stats) # cgtol needs to be updated in callback
-    # cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * cgtol)) 
     σk = solver.σ
     done = stats.status != :unknown
   end
@@ -356,3 +356,41 @@ function subsolve!(R2N::R2NSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_ver
     error("Unsupported subsolver type")
   end
 end
+
+
+# function subsolve!(R2N::R2NSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_verbose)
+#   if R2N.subsolver_type isa KrylovSolver
+#     # Define a shifted operator that applies H + σ * I(n) without allocating
+#     shifted_op = LinearOperator(size(H),
+#         (v_in, v_out) -> begin
+#             mul!(v_out, H, v_in)       # v_out = H * v_in
+#             v_out .+= σ * v_in         # v_out += σ * v_in
+#         end
+#     )
+#     Krylov.solve!(
+#         R2N.subsolver_type,
+#         shifted_op,
+#         ∇f,
+#         atol = atol,
+#         rtol = cgtol,
+#         itmax = 2*n,
+#         verbose = subsolver_verbose,
+#     )
+#     s .= R2N.subsolver_type.x
+#   elseif R2N.subsolver_type isa MinresSolver
+#     # Use the shift parameter λ = σ to avoid allocation in minres!
+#     minres!(
+#         R2N.subsolver_type,
+#         H, # A
+#         ∇f, # b
+#         λ = σ,
+#         itmax = 2*n,
+#         verbose = subsolver_verbose,
+#     )
+#     s .= R2N.subsolver_type.x
+#   elseif R2N.subsolver_type isa ShiftedLBFGSSolver
+#     solve_shifted_system!(s, H, ∇f, σ)
+#   else
+#     error("Unsupported subsolver type")
+#   end
+# end

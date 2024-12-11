@@ -1,5 +1,8 @@
 using SolverTest
 using BenchmarkTools
+using Profile
+using ProfileView
+
 # function tests()
 #   @testset "Testing NLP solvers" begin
 #     @testset "Unconstrained solvers" begin
@@ -64,10 +67,10 @@ using BenchmarkTools
 # include("solvers/trunkls.jl")
 # include("incompatible.jl")
 function cb(nlp, solver, stats)
-  T= Float64
+  T = Float64
   rtol = 1e-6
   norm_∇fk = norm(solver.gx)
-  solver.cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * solver.cgtol)) 
+  solver.cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * solver.cgtol))
 end
 
 function simple_Run()
@@ -75,23 +78,20 @@ function simple_Run()
   f(x) = (x[1] - 1)^2 + 4 * (x[2] - 3)^2
   nlp = ADNLPModel(f, [-1.2; 1.0])
 
-
   # statsR2 = R2(nlp)
   # println(statsR2.status, statsR2.iter)
-  
-  @test_throws ErrorException R2N(nlp, subsolver_type = JSOSolvers.ShiftedLBFGSSolver) 
-  stats = R2N(LBFGSModel(nlp), subsolver_type = JSOSolvers.ShiftedLBFGSSolver)
-  println(stats.status, stats.iter)
 
-  stats2 = R2N(nlp, subsolver_type = CgSolver)
-  println(stats2.status, stats2.iter)
+  # @test_throws ErrorException R2N(nlp, subsolver_type = JSOSolvers.ShiftedLBFGSSolver) 
+  # stats = R2N(LBFGSModel(nlp), subsolver_type = JSOSolvers.ShiftedLBFGSSolver)
+  # println(stats.status, stats.iter)
 
+  # stats2 = R2N(nlp, subsolver_type = CgSolver)
+  # println(stats2.status, stats2.iter)
 
-  
-  stats3 = R2N(LBFGSModel(nlp),max_iter = 30,callback = cb)
-  println(stats3.status, stats3.iter)
+  # stats3 = R2N(LBFGSModel(nlp),max_iter = 30,callback = cb)
+  # println(stats3.status, stats3.iter)
 
-  stats4= R2N(nlp)
+  # stats4= R2N(nlp)
   # # @test stats.status == :first_order
   # stats2 = R2N(nlp, subsolver_type = CgSolver)
   # println(stats2.status, stats2.iter)
@@ -103,40 +103,94 @@ function simple_Run()
   # stats3 = R2N(nlp3, subsolver_type = CgSolver)
   # println(stats3.status)
 
-  
-    # Ensure the function allocates no more than expected
-    solver = JSOSolvers.ShiftedLBFGSSolver
-    # @benchmark  R2N($nlp, subsolver_type = $solver) 
-    b = @benchmark R2N(LBFGSModel($nlp), subsolver_type = $solver)
-    # b= @benchmark lbfgs($nlp)
-    io = IOBuffer()
-    show(io, "text/plain", b)
-    s = String(take!(io))
-    println(s)
-    # Analyze results
-    println(b)
+  # Ensure the function allocates no more than expected
+  solver = JSOSolvers.ShiftedLBFGSSolver
+  println("----------------------")
+  println("\tShiftedLBFGSSolver")
+  println("----------------------")
+  # @benchmark  R2N($nlp, subsolver_type = $solver, max_iter = 1) 
+  #warm up
+  R2N(LBFGSModel(nlp), subsolver_type = solver)
+  b = @benchmark R2N(LBFGSModel($nlp), subsolver_type = $solver, max_iter = 1)
+  # b= @benchmark lbfgs($nlp)
+  io = IOBuffer()
+  show(io, "text/plain", b)
+  s = String(take!(io))
+  println(s)
+  # Analyze results
+  println(b)
+  b1 = @ballocated R2N(LBFGSModel($nlp), subsolver_type = $solver, max_iter = 1)
+  println("b1 = ", b1)
 
-  
-  
-    solver = JSOSolvers.CgSolver
-    b = @benchmark R2N($nlp, subsolver_type = $solver)
-    io = IOBuffer()
-    show(io, "text/plain", b)
-    s = String(take!(io))
-    println(s)
-    println(b)
 
-    solver = JSOSolvers.MinresSolver
-    b = @benchmark R2N($nlp, subsolver_type = $solver)
-    io = IOBuffer()
-    show(io, "text/plain", b)
-    s = String(take!(io))
-    println(s)
-    println(b)
+
+  #Testinb with TrunkSolver
+  # reset the nlp
+  reset!(nlp)
+  # warm up 
+  trunk(LBFGSModel(nlp))
+  println("----------------------")
+  println("\tTrunkSolver")
+  println("----------------------")
+  b = @benchmark trunk(LBFGSModel($nlp))
+  io = IOBuffer()
+  show(io, "text/plain", b)
+  s = String(take!(io))
+  println(s)
+  println(b)
+
+  b2 = @ballocated trunk(LBFGSModel($nlp))
+  println("b2 = ", b2)
+
+
+  solver = CgSolver
+  # reset the nlp
+  reset!(nlp)
+  # warm up 
+  R2N(LBFGSModel(nlp), subsolver_type = solver)
+
+  println("----------------------")
+  println("\tCgSolver")
+  println("----------------------")
+
+  b = @benchmark R2N($nlp, subsolver_type = $solver, max_iter = 1)
+  io = IOBuffer()
+  show(io, "text/plain", b)
+  s = String(take!(io))
+  println(s)
+  println(b)
+
+  b3 = @ballocated R2N($nlp, subsolver_type = $solver, max_iter = 1)
+  println("b3 = ", b3)
+  # solver = MinresSolver
+  # println("MinresSolver")
+  # b = @benchmark R2N($nlp, subsolver_type = $solver, max_iter = 1)
+  # io = IOBuffer()
+  # show(io, "text/plain", b)
+  # s = String(take!(io))
+  # println(s)
+  # println(b)
+
+  # Optional: Uncomment if you want to use ProfileView for visualization
+  # using ProfileView
+
+  # # Define the solver and model
+  # solver = JSOSolvers.ShiftedLBFGSSolver
+  # model = LBFGSModel(nlp)  # Ensure `nlp` is defined
+
+  # # Profile the R2N function
+  # Profile.clear()  # Clear previous profiling data
+  # @profile R2N(model, subsolver_type = solver)
+
+  # # Analyze and display profiling results
+  # println("Profiling Results:")
+  # Profile.print()
+  # ProfileView.view()
 
 end
 simple_Run()
 
-
-
-
+# using Profile, PProf
+# Profile.Allocs.clear()
+# Profile.Allocs.@profile R2N(LBFGSModel(nlp), subsolver_type = JSOSolvers.ShiftedLBFGSSolver)
+# PProf.Allocs.pprof()

@@ -1,6 +1,6 @@
 # using SolverTest
 # using BenchmarkTools
-# # using Profile
+using Profile
 # # using ProfileView
 
 # # function tests()
@@ -211,4 +211,4 @@ R2N(LBFGSModel(nlp), subsolver_type = solver)
 #   @benchmark R2N(LBFGSModel($nlp), subsolver_type = $solver, max_iter = 1)
 
 Profile.clear_malloc_data()
-R2N(LBFGSModel(nlp), subsolver_type = solver, max_iter = 2)
+R2N(LBFGSModel(nlp), subsolver_type = solver)

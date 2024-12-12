@@ -91,6 +91,7 @@ mutable struct R2NSolver{
   T,
   V,
   Op <: AbstractLinearOperator{T},
+  Op2 <: AbstractLinearOperator{T},
   Sub <: Union{KrylovSolver{T, T, V}, ShiftedLBFGSSolver},
 } <: AbstractOptimizationSolver
   x::V
@@ -99,6 +100,7 @@ mutable struct R2NSolver{
   gn::V
   σ::T
   H::Op
+  shifted_H::Op2
   Hs::V
   s::V
   obj_vec::V # used for non-monotone behaviour
@@ -118,7 +120,9 @@ function R2NSolver(
   gn = isa(nlp, QuasiNewtonModel) ? V(undef, nvar) : V(undef, 0)
   Hs = V(undef, nvar)
   H = isa(nlp, QuasiNewtonModel) ? nlp.op : hess_op!(nlp, x, Hs)
+  shifted_H = LinearOperator(Matrix{T}(I, nvar, nvar))
   Op = typeof(H)
+  Op2 = typeof(shifted_H)
   σ = zero(T) # init it to zero for now 
   s = V(undef, nvar)
   cgtol = one(T) # must be ≤ 1.0
@@ -127,7 +131,7 @@ function R2NSolver(
     isa(subsolver_type, Type{ShiftedLBFGSSolver}) ? subsolver_type() : subsolver_type(nvar, nvar, V)
 
   Sub = typeof(subsolver)
-  return R2NSolver{T, V, Op, Sub}(x, cx, gx, gn, σ, H, Hs, s, obj_vec, subsolver, cgtol)
+  return R2NSolver{T, V, Op,Op2, Sub}(x, cx, gx, gn, σ, H,shifted_H, Hs, s, obj_vec, subsolver, cgtol)
 end
 
 function SolverCore.reset!(solver::R2NSolver{T}) where {T}
@@ -138,6 +142,7 @@ function SolverCore.reset!(solver::R2NSolver{T}, nlp::AbstractNLPModel) where {T
   fill!(solver.obj_vec, typemin(T))
   @assert (length(solver.gn) == 0) || isa(nlp, QuasiNewtonModel)
   solver.H = isa(nlp, QuasiNewtonModel) ? nlp.op : hess_op!(nlp, x, Hs)
+  solver.shifted_H = LinearOperator(Matrix{T}(I, nlp.meta.nvar, nlp.meta.nvar))
   solver.cgtol = one(T)
   solver
 end
@@ -198,6 +203,7 @@ function SolverCore.solve!(
   ∇fn = solver.gn #current 
   s = solver.s
   H = solver.H
+  shifted_H = solver.shifted_H
   Hs = solver.Hs
   σk = solver.σ
   cgtol = solver.cgtol
@@ -247,7 +253,7 @@ function SolverCore.solve!(
 
   while !done
     ∇fk .*= -1
-    subsolve!(solver, s, H, ∇fk, 0.0, cgtol, n, σk, subsolver_verbose)
+    subsolve!(solver, s, ∇fk, 0.0, cgtol, n, subsolver_verbose)
     slope = dot(n, s, ∇fk) # = -dot(s, ∇fk) but ∇fk is negative
     mul!(Hs, H, s)
     curv = dot(s, Hs)
@@ -325,13 +331,13 @@ function SolverCore.solve!(
   return stats
 end
 
-function subsolve!(R2N::R2NSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_verbose)  
+function subsolve!(R2N::R2NSolver, s, ∇f, atol, cgtol, n, subsolver_verbose)  
   if R2N.subsolver_type isa MinresSolver
     minres!(
       R2N.subsolver_type,
-      H, #A
+      R2N.H, #A
       ∇f, #b 
-      λ = σ,
+      λ = R2N.σ,
       itmax = 2*n,
       verbose = subsolver_verbose,
     )
@@ -340,7 +346,7 @@ function subsolve!(R2N::R2NSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_ver
   elseif R2N.subsolver_type isa KrylovSolver
     Krylov.solve!(
       R2N.subsolver_type,
-      (H + σ * I(n)),
+      (R2N.H + R2N.σ * R2N.shifted_H),
       ∇f,
       atol = atol,
       rtol = cgtol,
@@ -351,7 +357,7 @@ function subsolve!(R2N::R2NSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_ver
     # stas = R2N.subsolver_type.stats
 
   elseif R2N.subsolver_type isa ShiftedLBFGSSolver
-    solve_shifted_system!(s, H, ∇f, σ)
+    solve_shifted_system!(s, R2N.H, ∇f, R2N.σ)
   else
     error("Unsupported subsolver type")
   end

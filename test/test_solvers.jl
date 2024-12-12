@@ -1,7 +1,7 @@
 using SolverTest
 using BenchmarkTools
-using Profile
-using ProfileView
+# using Profile
+# using ProfileView
 
 # function tests()
 #   @testset "Testing NLP solvers" begin
@@ -108,8 +108,8 @@ function simple_Run()
   println("----------------------")
   println("\tShiftedLBFGSSolver")
   println("----------------------")
-  # @benchmark  R2N($nlp, subsolver_type = $solver, max_iter = 1) 
-  #warm up
+  @benchmark  R2N($nlp, subsolver_type = $solver, max_iter = 1) 
+  # warm up
   R2N(LBFGSModel(nlp), subsolver_type = solver)
   b = @benchmark R2N(LBFGSModel($nlp), subsolver_type = $solver, max_iter = 1)
   # b= @benchmark lbfgs($nlp)
@@ -119,8 +119,9 @@ function simple_Run()
   println(s)
   # Analyze results
   println(b)
-  b1 = @ballocated R2N(LBFGSModel($nlp), subsolver_type = $solver, max_iter = 1)
-  println("b1 = ", b1)
+
+  # b1 = @ballocated R2N(LBFGSModel($nlp), subsolver_type = $solver, max_iter = 1)
+  # println("b1 = ", b1)
 
 
 
@@ -147,7 +148,7 @@ function simple_Run()
   # reset the nlp
   reset!(nlp)
   # warm up 
-  R2N(LBFGSModel(nlp), subsolver_type = solver)
+  R2N(nlp, subsolver_type = solver)
 
   println("----------------------")
   println("\tCgSolver")
@@ -162,14 +163,20 @@ function simple_Run()
 
   b3 = @ballocated R2N($nlp, subsolver_type = $solver, max_iter = 1)
   println("b3 = ", b3)
-  # solver = MinresSolver
-  # println("MinresSolver")
-  # b = @benchmark R2N($nlp, subsolver_type = $solver, max_iter = 1)
-  # io = IOBuffer()
-  # show(io, "text/plain", b)
-  # s = String(take!(io))
-  # println(s)
-  # println(b)
+
+
+  println("----------------------")
+  println("\tMinresSolver")
+  println("----------------------")
+
+  solver = MinresSolver
+  println("MinresSolver")
+  b = @benchmark R2N($nlp, subsolver_type = $solver, max_iter = 1)
+  io = IOBuffer()
+  show(io, "text/plain", b)
+  s = String(take!(io))
+  println(s)
+  println(b)
 
   # Optional: Uncomment if you want to use ProfileView for visualization
   # using ProfileView

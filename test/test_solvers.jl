@@ -108,7 +108,6 @@ function simple_Run()
   println("----------------------")
   println("\tShiftedLBFGSSolver")
   println("----------------------")
-  @benchmark  R2N($nlp, subsolver_type = $solver, max_iter = 1) 
   # warm up
   R2N(LBFGSModel(nlp), subsolver_type = solver)
   b = @benchmark R2N(LBFGSModel($nlp), subsolver_type = $solver, max_iter = 1)
@@ -117,22 +116,20 @@ function simple_Run()
   show(io, "text/plain", b)
   s = String(take!(io))
   println(s)
-  # Analyze results
   println(b)
-
-  # b1 = @ballocated R2N(LBFGSModel($nlp), subsolver_type = $solver, max_iter = 1)
-  # println("b1 = ", b1)
 
 
 
   #Testinb with TrunkSolver
   # reset the nlp
-  reset!(nlp)
-  # warm up 
-  trunk(LBFGSModel(nlp))
+
   println("----------------------")
   println("\tTrunkSolver")
   println("----------------------")
+  reset!(nlp)
+  # warm up 
+  trunk(LBFGSModel(nlp))
+
   b = @benchmark trunk(LBFGSModel($nlp))
   io = IOBuffer()
   show(io, "text/plain", b)

@@ -153,7 +153,7 @@ end
   non_mono_size = 1,
   kwargs...,
 ) where {T, V}
-  solver = R2NSolver(nlp, non_mono_size = non_mono_size, subsolver_type = subsolver_type)
+  solver = R2NSolver(nlp; non_mono_size = non_mono_size, subsolver_type = subsolver_type)
   return solve!(solver, nlp; non_mono_size = non_mono_size, kwargs...)
 end
 

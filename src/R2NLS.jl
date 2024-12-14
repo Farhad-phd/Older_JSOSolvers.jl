@@ -20,7 +20,6 @@ x::V
 xt::V
 temp::V
 gx::V
-gt::V
 Fx::V
 rt::V
 Av::V
@@ -45,7 +44,6 @@ function R2NLSSolver(
   xt = V(undef, nvar)
   temp = V(undef, nequ)
   gx = V(undef, nvar)
-  gt = V(undef, nvar)
   Fx = V(undef, nequ)
   rt = V(undef, nequ)
   Av = V(undef, nequ)
@@ -59,7 +57,7 @@ function R2NLSSolver(
   cgtol = one(T) # must be ≤ 1.0
   obj_vec = fill(typemin(T), non_mono_size)
 
-  return R2NLSSolver{T, V, Op, Sub}(x, xt, temp, gx, gt, Fx, rt, Av, Atv, A, subsolver, obj_vec, cgtol)
+  return R2NLSSolver{T, V, Op, Sub}(x, xt, temp, gx, Fx, rt, Av, Atv, A, subsolver, obj_vec, cgtol)
 end
 
 function SolverCore.reset!(solver::R2NLSSolver{T}) where {T}
@@ -91,8 +89,8 @@ function SolverCore.solve!(
   x::V = nlp.meta.x0,
   atol::T = √eps(T),
   rtol::T = √eps(T),
-  # Fatol::T = zero(T),
-  # Frtol::T = zero(T),
+  Fatol::T = zero(T),
+  Frtol::T = zero(T),
   η1 = eps(T)^(1 / 4),
   η2 = T(0.95),
   γ1 = T(1 / 2),
@@ -120,31 +118,41 @@ function SolverCore.solve!(
 
   n = nlp.nls_meta.nvar
   m = nlp.nls_meta.nequ
-  ##############
   
   x = solver.x .= x
-  ck = solver.xt
-  ∇fk = solver.gx # k-1
-  ∇fn = solver.gt #current 
-  s = solver.s
-  H = solver.H
-  Hs = solver.Hs
-  σk = solver.σ
+  xt = solver.xt
+  ∇f = solver.gx # k-1
+  subsolver = solver.subsolver
   cgtol = solver.cgtol
+  r, rt = solver.Fx, solver.rt
+  s = solver.s
+  σk = solver.σ
+  
+  residual!(nlp, x, r)
+  f, ∇f = objgrad!(nlp, x, ∇f, r, recompute = false)
 
-  set_iter!(stats, 0)
-  set_objective!(stats, obj(nlp, x))
-
-  grad!(nlp, x, ∇fk)
-  isa(nlp, QuasiNewtonModel) && (∇fn .= ∇fk)
-  norm_∇fk = norm(∇fk)
-  set_dual_residual!(stats, norm_∇fk)
-
+  # preallocate storage for products with A and A'
+  A = solver.A # jac_op_residual!(nlp, x, Av, Atv)
+  mul!(∇f, A', r)
+  
+  norm_∇fk = norm(∇f)
   σk = 2^round(log2(norm_∇fk + 1))
 
   # Stopping criterion: 
   ϵ = atol + rtol * norm_∇fk
+  ϵF = Fatol + Frtol * 2 * √f
+
+  # Preallocate xt.
+  xt = solver.xt
+  temp = solver.temp
+
   optimal = norm_∇fk ≤ ϵ
+  small_residual = 2 * √f ≤ ϵF
+
+  set_iter!(stats, 0)
+  set_objective!(stats, f)
+  set_dual_residual!(stats, norm_∇fk)
+
   if optimal
     @info("Optimal point found at initial point")
     @info @sprintf "%5s  %9s  %7s  %7s " "iter" "f" "‖∇f‖" "σ"
@@ -163,30 +171,44 @@ function SolverCore.solve!(
       optimal = optimal,
       max_eval = max_eval,
       iter = stats.iter,
+      small_residual = small_residual,
       max_iter = max_iter,
       max_time = max_time,
     ),
   )
 
-  solver.σ = σk #TODO do I meed this 
   callback(nlp, solver, stats)
-  σk = solver.σ
 
   done = stats.status != :unknown
   cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * cgtol))
 
   while !done
-    ∇fk .*= -1
-    subsolve!(solver, s, H, ∇fk, 0.0, cgtol, n, σk, subsolver_verbose)
-    slope = dot(n, s, ∇fk) # = -dot(s, ∇fk) but ∇fk is negative
-    mul!(Hs, H, s)
-    curv = dot(s, Hs)
-    ΔTk = (slope + curv) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
-    # ΔTk = (dot(s, ∇fk) + σk * dot(s, s)) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
+    temp .= .-r
+    Krylov.solve!(
+      subsolver,
+      A,
+      temp,
+      atol = atol,
+      rtol = cgtol,
+      λ = √(σk/2), # sqrt(σk / 2),  λ ≥ 0 is a regularization parameter.
+      itmax = max(2 * (n + m), 50),
+      timemax = max_time - stats.elapsed_time,
+      verbose = subsolver_verbose,
+    )
+    s, cg_stats = subsolver.x, subsolver.stats
+    norm_s = norm(s)
 
-    ck .= x .+ s
-    # ck .+= s
-    fck = obj(nlp, ck)
+    # Compute actual vs. predicted reduction.
+    copyaxpy!(n, one(T), s, x, xt) # xt = x + s
+    mul!(temp, A, s)
+    slope = dot(r, temp)
+    curv = dot(temp, temp)
+    ΔTk = slope + curv / 2
+    residual!(nlp, xt, rt)
+    fck = obj(nlp, x, rt, recompute = false)
+
+    ΔTk = (slope + curv - σk^2 * norm_s^2) / 2  # TODO in Youssef paper they use σ/2 * norm(s)^2 
+    fck = obj(nlp, xt)
     if fck == -Inf
       set_status!(stats, :unbounded)
       break
@@ -210,16 +232,10 @@ function SolverCore.solve!(
 
     # Acceptance of the new candidate
     if ρk >= η1
-      x .= ck
-      grad!(nlp, x, ∇fk)
-      if isa(nlp, QuasiNewtonModel)
-        ∇fn .-= ∇fk
-        ∇fn .*= -1  # = ∇f(xₖ₊₁) - ∇f(xₖ)
-        push!(nlp, s, ∇fn)
-        ∇fn .= ∇fk
-      end
+      x .= xt
+      grad!(nlp, x, ∇f)
       set_objective!(stats, fck)
-      norm_∇fk = norm(∇fk)
+      norm_∇fk = norm(∇f)
     end
 
     set_iter!(stats, stats.iter + 1)
@@ -238,89 +254,18 @@ function SolverCore.solve!(
         nlp,
         elapsed_time = stats.elapsed_time,
         optimal = optimal,
+        small_residual = small_residual,
         max_eval = max_eval,
         iter = stats.iter,
         max_iter = max_iter,
         max_time = max_time,
       ),
     )
-    solver.σ = σk
     cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * cgtol)) 
-    callback(nlp, solver, stats) # cgtol needs to be updated in callback
-    σk = solver.σ
+    callback(nlp, solver, stats) # cgtol can be updated here
     done = stats.status != :unknown
   end
 
   set_solution!(stats, x)
   return stats
 end
-
-function subsolve!(R2NLS::R2NLSSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_verbose)  
-  if R2NLS.subsolver_type isa MinresSolver
-    minres!(
-      R2NLS.subsolver_type,
-      H, #A
-      ∇f, #b 
-      λ = σ,
-      itmax = 2*n,
-      verbose = subsolver_verbose,
-    )
-    s .= R2NLS.subsolver_type.x
-    # stas = R2NLS.subsolver_type.stats
-  elseif R2NLS.subsolver_type isa KrylovSolver
-    Krylov.solve!(
-      R2NLS.subsolver_type,
-      (H + σ * I(n)),
-      ∇f,
-      atol = atol,
-      rtol = cgtol,
-      itmax = 2*n,
-      verbose = subsolver_verbose,
-    )
-    s .= R2NLS.subsolver_type.x
-    # stas = R2NLS.subsolver_type.stats
-
-  elseif R2NLS.subsolver_type isa ShiftedLBFGSSolver
-    solve_shifted_system!(s, H, ∇f, σ)
-  else
-    error("Unsupported subsolver type")
-  end
-end
-
-
-# function subsolve!(R2NLS::R2NLSSolver, s, H, ∇f, atol, cgtol, n, σ, subsolver_verbose)
-#   if R2NLS.subsolver_type isa KrylovSolver
-#     # Define a shifted operator that applies H + σ * I(n) without allocating
-#     shifted_op = LinearOperator(size(H),
-#         (v_in, v_out) -> begin
-#             mul!(v_out, H, v_in)       # v_out = H * v_in
-#             v_out .+= σ * v_in         # v_out += σ * v_in
-#         end
-#     )
-#     Krylov.solve!(
-#         R2NLS.subsolver_type,
-#         shifted_op,
-#         ∇f,
-#         atol = atol,
-#         rtol = cgtol,
-#         itmax = 2*n,
-#         verbose = subsolver_verbose,
-#     )
-#     s .= R2NLS.subsolver_type.x
-#   elseif R2NLS.subsolver_type isa MinresSolver
-#     # Use the shift parameter λ = σ to avoid allocation in minres!
-#     minres!(
-#         R2NLS.subsolver_type,
-#         H, # A
-#         ∇f, # b
-#         λ = σ,
-#         itmax = 2*n,
-#         verbose = subsolver_verbose,
-#     )
-#     s .= R2NLS.subsolver_type.x
-#   elseif R2NLS.subsolver_type isa ShiftedLBFGSSolver
-#     solve_shifted_system!(s, H, ∇f, σ)
-#   else
-#     error("Unsupported subsolver type")
-#   end
-# end

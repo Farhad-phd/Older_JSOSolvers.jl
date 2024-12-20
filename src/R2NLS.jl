@@ -28,6 +28,7 @@ A::Op
 subsolver::Sub
 obj_vec::V # used for non-monotone behaviour
 cgtol::T
+σ::T
 end
 
 function R2NLSSolver(
@@ -57,7 +58,7 @@ function R2NLSSolver(
   cgtol = one(T) # must be ≤ 1.0
   obj_vec = fill(typemin(T), non_mono_size)
 
-  return R2NLSSolver{T, V, Op, Sub}(x, xt, temp, gx, Fx, rt, Av, Atv, A, subsolver, obj_vec, cgtol)
+  return R2NLSSolver{T, V, Op, Sub}(x, xt, temp, gx, Fx, rt, Av, Atv, A, subsolver, obj_vec, cgtol, σ)
 end
 
 function SolverCore.reset!(solver::R2NLSSolver{T}) where {T}
@@ -125,7 +126,7 @@ function SolverCore.solve!(
   subsolver = solver.subsolver
   cgtol = solver.cgtol
   r, rt = solver.Fx, solver.rt
-  s = solver.s
+  # s = solver.s #TODO I do not need this 
   σk = solver.σ
   
   residual!(nlp, x, r)
@@ -190,7 +191,7 @@ function SolverCore.solve!(
       temp,
       atol = atol,
       rtol = cgtol,
-      λ = √(σk/2), # sqrt(σk / 2),  λ ≥ 0 is a regularization parameter.
+      λ = √(σk), # sqrt(σk / 2),  λ ≥ 0 is a regularization parameter.
       itmax = max(2 * (n + m), 50),
       timemax = max_time - stats.elapsed_time,
       verbose = subsolver_verbose,
@@ -199,16 +200,18 @@ function SolverCore.solve!(
     norm_s = norm(s)
 
     # Compute actual vs. predicted reduction.
-    copyaxpy!(n, one(T), s, x, xt) # xt = x + s
-    mul!(temp, A, s)
+    # copyaxpy!(n, one(T), s, x, xt) # xt = x + s
+    xt .= x .+ s
+    mul!(temp, A, s) # do we update A?
     slope = dot(r, temp)
     curv = dot(temp, temp)
-    ΔTk = slope + curv / 2
     residual!(nlp, xt, rt)
     fck = obj(nlp, x, rt, recompute = false)
+    # fck = obj(nlp, xt)
 
-    ΔTk = (slope + curv - σk^2 * norm_s^2) / 2  # TODO in Youssef paper they use σ/2 * norm(s)^2 
-    fck = obj(nlp, xt)
+    # ΔTk = (slope + curv ) / 2  # TODO in Youssef paper they use σ/2 * norm(s)^2  - σk^2 * norm_s^2
+    ΔTk = -slope - curv/ 2  # TODO in Youssef paper they use σ/2 * norm(s)^2  - σk^2 * norm_s^2
+
     if fck == -Inf
       set_status!(stats, :unbounded)
       break
@@ -232,7 +235,10 @@ function SolverCore.solve!(
 
     # Acceptance of the new candidate
     if ρk >= η1
+      # update A implicitly
       x .= xt
+      r .= rt
+      f = fck
       grad!(nlp, x, ∇f)
       set_objective!(stats, fck)
       norm_∇fk = norm(∇f)

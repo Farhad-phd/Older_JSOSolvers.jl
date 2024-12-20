@@ -47,6 +47,7 @@ include("trunk.jl")
 # include("R2.jl")
 include("pR2.jl")
 include("R2N.jl")
+include("R2NLS.jl")
 include("pR2N.jl")
 
 include("fomo.jl")

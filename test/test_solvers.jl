@@ -200,15 +200,34 @@ using Profile
 # # PProf.Allocs.pprof()
 
 
-T = Float64
-f(x) = (x[1] - 1)^2 + 4 * (x[2] - 3)^2
-nlp = ADNLPModel(f, [-1.2; 1.0])
+# T = Float64
+# f(x) = (x[1] - 1)^2 + 4 * (x[2] - 3)^2
+# nlp = ADNLPModel(f, [-1.2; 1.0])
 
-solver = JSOSolvers.ShiftedLBFGSSolver
+# solver = JSOSolvers.ShiftedLBFGSSolver
 
-# warm up
-R2N(LBFGSModel(nlp), subsolver_type = solver)
-#   @benchmark R2N(LBFGSModel($nlp), subsolver_type = $solver, max_iter = 1)
+# # warm up
+# R2N(LBFGSModel(nlp), subsolver_type = solver)
+# #   @benchmark R2N(LBFGSModel($nlp), subsolver_type = $solver, max_iter = 1)
 
-Profile.clear_malloc_data()
-R2N(LBFGSModel(nlp), subsolver_type = solver)
+# Profile.clear_malloc_data()
+# R2N(LBFGSModel(nlp), subsolver_type = solver)
+
+
+
+
+model = ADNLSModel(x -> [10 * (x[2] - x[1]^2), 1 - x[1]], [-2.0, 1.0], 2)
+
+for subsolver in JSOSolvers.R2NLS_allowed_subsolvers
+    stats = with_logger(NullLogger()) do
+      R2NLS(model, subsolver_type = subsolver)
+    end
+    @test stats.status == :first_order
+    @test stats.solution_reliable
+    isapprox(stats.solution, ones(2), rtol = 1e-4)
+    @test stats.objective_reliable
+    @test isapprox(stats.objective, 0, atol = 1e-6)
+    @test neval_jac_residual(model) == 0
+    stline = statsline(stats, [:objective, :dual_feas, :elapsed_time, :iter, :status])
+    reset!(model)
+  end

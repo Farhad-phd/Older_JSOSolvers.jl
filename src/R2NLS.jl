@@ -32,7 +32,7 @@ cgtol::T
 end
 
 function R2NLSSolver(
-  nlp::AbstractNLPModel{T, V};
+  nlp::AbstractNLSModel{T, V};
   non_mono_size = 1,
   subsolver_type::Type{<:KrylovSolver} = LsmrSolver,
 ) where {T, V}
@@ -65,7 +65,7 @@ function SolverCore.reset!(solver::R2NLSSolver{T}) where {T}
   fill!(solver.obj_vec, typemin(T))
   solver
 end
-function SolverCore.reset!(solver::R2NLSSolver{T}, nlp::AbstractNLPModel) where {T}
+function SolverCore.reset!(solver::R2NLSSolver{T}, nlp::AbstractNLSModel) where {T}
   fill!(solver.obj_vec, typemin(T))
   solver.A = jac_op_residual!(nlp, solver.x, solver.Av, solver.Atv)
   solver.cgtol = one(T)
@@ -73,7 +73,7 @@ function SolverCore.reset!(solver::R2NLSSolver{T}, nlp::AbstractNLPModel) where 
 end
 
 @doc (@doc R2NLSSolver) function R2NLS(
-  nlp::AbstractNLPModel{T, V};
+  nlp::AbstractNLSModel{T, V};
   subsolver_type::Type{<:KrylovSolver} = LsmrSolver,
   non_mono_size = 1,
   kwargs...,
@@ -84,7 +84,7 @@ end
 
 function SolverCore.solve!(
   solver::R2NLSSolver{T, V},
-  nlp::AbstractNLPModel{T, V},
+  nlp::AbstractNLSModel{T, V},
   stats::GenericExecutionStats{T, V};
   callback = (args...) -> nothing,
   x::V = nlp.meta.x0,

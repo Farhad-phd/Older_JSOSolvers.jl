@@ -29,6 +29,7 @@ subsolver::Sub
 obj_vec::V # used for non-monotone behaviour
 cgtol::T
 σ::T
+μ::T
 end
 
 function R2NLSSolver(
@@ -54,11 +55,12 @@ function R2NLSSolver(
   subsolver = subsolver_type(nequ, nvar, V)
   Sub = typeof(subsolver)
 
-  σ = zero(T) # init it to zero for now 
+  σ = zero(T) 
+  μ = zero(T)
   cgtol = one(T) # must be ≤ 1.0
   obj_vec = fill(typemin(T), non_mono_size)
 
-  return R2NLSSolver{T, V, Op, Sub}(x, xt, temp, gx, Fx, rt, Av, Atv, A, subsolver, obj_vec, cgtol, σ)
+  return R2NLSSolver{T, V, Op, Sub}(x, xt, temp, gx, Fx, rt, Av, Atv, A, subsolver, obj_vec, cgtol, σ, μ)
 end
 
 function SolverCore.reset!(solver::R2NLSSolver{T}) where {T}
@@ -94,8 +96,7 @@ function SolverCore.solve!(
   Frtol::T = zero(T),
   η1 = eps(T)^(1 / 4),
   η2 = T(0.95),
-  γ1 = T(1 / 2),
-  γ2 = 1 / γ1,
+  λ = T(2),
   σmin = zero(T),
   max_time::Float64 = 30.0,
   max_eval::Int = -1,
@@ -116,6 +117,7 @@ function SolverCore.solve!(
   reset!(stats)
   start_time = time()
   set_time!(stats, 0.0)
+  μmin = σmin
 
   n = nlp.nls_meta.nvar
   m = nlp.nls_meta.nequ
@@ -128,6 +130,7 @@ function SolverCore.solve!(
   r, rt = solver.Fx, solver.rt
   # s = solver.s #TODO I do not need this 
   σk = solver.σ
+  μk = solver.μ
   
   residual!(nlp, x, r)
   f, ∇f = objgrad!(nlp, x, ∇f, r, recompute = false)
@@ -137,7 +140,9 @@ function SolverCore.solve!(
   mul!(∇f, A', r)
   
   norm_∇fk = norm(∇f)
-  σk = 2^round(log2(norm_∇fk + 1))
+  μk = 2^round(log2(norm_∇fk + 1))
+  σk = μk * norm_∇fk
+
 
   # Stopping criterion: 
   ϵ = atol + rtol * norm_∇fk
@@ -154,15 +159,17 @@ function SolverCore.solve!(
   set_objective!(stats, f)
   set_dual_residual!(stats, norm_∇fk)
 
+
   if optimal
     @info("Optimal point found at initial point")
-    @info @sprintf "%5s  %9s  %7s  %7s " "iter" "f" "‖∇f‖" "σ"
-    @info @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk σk
-  end
-  if verbose > 0 && mod(stats.iter, verbose) == 0
-    @info @sprintf "%5s  %9s  %7s  %7s " "iter" "f" "‖∇f‖" "σ"
-    infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk σk
-  end
+    @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
+    @info @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
+end
+if verbose > 0 && mod(stats.iter, verbose) == 0
+    @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
+    infoline =
+        @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
+end
 
   set_status!(
     stats,
@@ -226,49 +233,58 @@ function SolverCore.solve!(
       ρk = (stats.objective - fck) / ΔTk
     end
 
-    # Update regularization parameters
-    if ρk >= η2
-      σk = max(σmin, γ1 * σk)
-    elseif ρk < η1
-      σk = σk * γ2
-    end
-
-    # Acceptance of the new candidate
-    if ρk >= η1
-      # update A implicitly
-      x .= xt
-      r .= rt
-      f = fck
-      grad!(nlp, x, ∇f)
-      set_objective!(stats, fck)
-      norm_∇fk = norm(∇f)
+    # Update regularization parameters and Acceptance of the new candidate
+    step_accepted = ρk >= η1 && σk >= η2
+    if step_accepted
+        μk = max(μmin, μk / λ)
+        # update A implicitly
+        x .= xt
+        r .= rt
+        f = fck
+        grad!(nlp, x, ∇f)
+        set_objective!(stats, fck)
+        norm_∇fk = norm(∇f)
+    else
+        μk = μk * λ
     end
 
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
+
+    cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * cgtol))
+    callback(nlp, solver, stats)
+    ∇fk = solver.gx
+    norm_∇fk = norm(∇fk)
     set_dual_residual!(stats, norm_∇fk)
+    σk = μk * norm_∇fk
+
     optimal = norm_∇fk ≤ ϵ
+    small_residual = 2 * √f ≤ ϵF
 
     if verbose > 0 && mod(stats.iter, verbose) == 0
       @info infoline
-      infoline = @sprintf "%5d  %9.2e  %7.1e  %7.1e" stats.iter stats.objective norm_∇fk σk
+      σ_stat = step_accepted ? "↘" : "↗"
+      infoline =
+          @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat #TODO print B norm
     end
-
-    set_status!(
-      stats,
-      get_status(
-        nlp,
-        elapsed_time = stats.elapsed_time,
-        optimal = optimal,
-        small_residual = small_residual,
-        max_eval = max_eval,
-        iter = stats.iter,
-        max_iter = max_iter,
-        max_time = max_time,
-      ),
-    )
-    cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * cgtol)) 
-    callback(nlp, solver, stats) # cgtol can be updated here
+    #Since the user can force the status to be something else, we need to check if the user has stopped the algorithm
+    if stats.status == :first_order #this is what user set in their callback
+      set_status!(stats, :first_order)
+    else
+      set_status!(
+        stats,
+        get_status(
+          nlp,
+          elapsed_time = stats.elapsed_time,
+          optimal = optimal,
+          small_residual = small_residual,
+          max_eval = max_eval,
+          iter = stats.iter,
+          max_iter = max_iter,
+          max_time = max_time,
+        ),
+      )
+    end
     done = stats.status != :unknown
   end
 

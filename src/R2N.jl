@@ -273,10 +273,17 @@ function SolverCore.solve!(
     while !done
         ∇fk .*= -1
         subsolve!(solver, s, ∇fk, 0.0, cgtol, n, subsolver_verbose)
-        slope = dot(n, s, ∇fk) # = -dot(s, ∇fk) but ∇fk is negative
+
+        # slope = -dot(n, s, ∇fk) # = -dot(s, ∇fk) but ∇fk is negative
+        # mul!(Hs, H, s)
+        # # curv = dot(s, Hs)
+        slope = dot(s, ∇fk)
         mul!(Hs, H, s)
-        curv = dot(s, Hs)
-        ΔTk = (slope + curv) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
+        # curv = dot(n, s, Hs)
+        curv = dot(s, (Hs + σk.* s))
+
+
+        ΔTk = slope - curv / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
         # ΔTk = (dot(s, ∇fk) + σk * dot(s, s)) / 2  # since ∇fk is negative, otherwise we had -dot(s, ∇fk)
 
         ck .= x .+ s

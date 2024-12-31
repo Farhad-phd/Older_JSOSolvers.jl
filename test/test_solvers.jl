@@ -18,15 +18,18 @@ function simple_Run()
   println(stats.status, stats.iter)
 
   stats2 = R2N(nlp, subsolver_type = CgSolver, verbose = 1, max_iter = 100)
-  # println(stats2.status, stats2.iter)
+  println(stats2.status, stats2.iter)
 
-  # stats3 = R2N(LBFGSModel(nlp),max_iter = 30,callback = cb, subsolver_type =Krylov.MinresSolver)
-  # println(stats3.status, stats3.iter)
+  stats3 = R2N(LBFGSModel(nlp),callback = cb, subsolver_type =Krylov.MinresSolver,verbose = 1, max_iter = 100)
+  println(stats3.status, stats3.iter)
 
   # stats4= R2N(nlp)
   # @test stats.status == :first_order
-#   # stats2 = R2N(nlp, subsolver_type = CgSolver)
-#   # println(stats2.status, stats2.iter)
+  stats4 = R2N(nlp, subsolver_type = Krylov.MinresSolver,verbose = 1, max_iter = 100)
+  println(stats4.status, stats4.iter)
+
+  stats5 = lbfgs(nlp,verbose = 1, max_iter = 100)
+  println(stats5.status, stats5.iter)
 
 #   # @test stats2.status == :first_order
 #   # @test stats2.solution_reliable
@@ -51,7 +54,7 @@ function simple_Run()
 #   println(b)
 
 
-  println("MinresSolver")
+  # println("MinresSolver")
 
 end
 simple_Run()
@@ -74,18 +77,19 @@ simple_Run()
 
 
 
-# model = ADNLSModel(x -> [10 * (x[2] - x[1]^2), 1 - x[1]], [-2.0, 1.0], 2)
+model = ADNLSModel(x -> [10 * (x[2] - x[1]^2), 1 - x[1]], [-2.0, 1.0], 2)
 
-# for subsolver in JSOSolvers.R2NLS_allowed_subsolvers
-#     stats = with_logger(NullLogger()) do
-#       R2NLS(model, subsolver_type = subsolver)
-#     end
-#     @test stats.status == :first_order
-#     @test stats.solution_reliable
-#     isapprox(stats.solution, ones(2), rtol = 1e-4)
-#     @test stats.objective_reliable
-#     @test isapprox(stats.objective, 0, atol = 1e-6)
-#     @test neval_jac_residual(model) == 0
-#     stline = statsline(stats, [:objective, :dual_feas, :elapsed_time, :iter, :status])
-#     reset!(model)
-#   end
+for subsolver in JSOSolvers.R2NLS_allowed_subsolvers
+    stats = with_logger(NullLogger()) do
+      R2NLS(model, subsolver_type = subsolver)
+    end
+    @info "status R2NLS: $(stats.status)"
+    @test stats.status == :first_order
+    @test stats.solution_reliable
+    isapprox(stats.solution, ones(2), rtol = 1e-4)
+    @test stats.objective_reliable
+    @test isapprox(stats.objective, 0, atol = 1e-6)
+    @test neval_jac_residual(model) == 0
+    stline = statsline(stats, [:objective, :dual_feas, :elapsed_time, :iter, :status])
+    reset!(model)
+  end

@@ -10,26 +10,22 @@ const R2NLS_allowed_subsolvers = [CglsSolver, CrlsSolver, LsqrSolver, LsmrSolver
 
 TODO add docstring
 """
-mutable struct R2NLSSolver{
-  T,
-  V,
-  Op <: AbstractLinearOperator{T},
-  Sub <: KrylovSolver{T, T, V},
-} <: AbstractOptimizationSolver
-x::V
-xt::V
-temp::V
-gx::V
-Fx::V
-rt::V
-Av::V
-Atv::V
-A::Op
-subsolver::Sub
-obj_vec::V # used for non-monotone behaviour
-cgtol::T
-σ::T
-μ::T
+mutable struct R2NLSSolver{T, V, Op <: AbstractLinearOperator{T}, Sub <: KrylovSolver{T, T, V}} <:
+               AbstractOptimizationSolver
+  x::V
+  xt::V
+  temp::V
+  gx::V
+  Fx::V
+  rt::V
+  Av::V
+  Atv::V
+  A::Op
+  subsolver::Sub
+  obj_vec::V # used for non-monotone behaviour
+  cgtol::T
+  σ::T
+  μ::T
 end
 
 function R2NLSSolver(
@@ -37,7 +33,8 @@ function R2NLSSolver(
   non_mono_size = 1,
   subsolver_type::Type{<:KrylovSolver} = LsmrSolver,
 ) where {T, V}
-  subsolver_type in R2NLS_allowed_subsolvers || error("subproblem solver must be one of $(R2NLS_allowed_subsolvers)")
+  subsolver_type in R2NLS_allowed_subsolvers ||
+    error("subproblem solver must be one of $(R2NLS_allowed_subsolvers)")
 
   nvar = nlp.meta.nvar
   nequ = nlp.nls_meta.nequ
@@ -55,12 +52,27 @@ function R2NLSSolver(
   subsolver = subsolver_type(nequ, nvar, V)
   Sub = typeof(subsolver)
 
-  σ = zero(T) 
+  σ = zero(T)
   μ = zero(T)
   cgtol = one(T) # must be ≤ 1.0
   obj_vec = fill(typemin(T), non_mono_size)
 
-  return R2NLSSolver{T, V, Op, Sub}(x, xt, temp, gx, Fx, rt, Av, Atv, A, subsolver, obj_vec, cgtol, σ, μ)
+  return R2NLSSolver{T, V, Op, Sub}(
+    x,
+    xt,
+    temp,
+    gx,
+    Fx,
+    rt,
+    Av,
+    Atv,
+    A,
+    subsolver,
+    obj_vec,
+    cgtol,
+    σ,
+    μ,
+  )
 end
 
 function SolverCore.reset!(solver::R2NLSSolver{T}) where {T}
@@ -121,28 +133,27 @@ function SolverCore.solve!(
 
   n = nlp.nls_meta.nvar
   m = nlp.nls_meta.nequ
-  
+
   x = solver.x .= x
   xt = solver.xt
   ∇f = solver.gx # k-1
   subsolver = solver.subsolver
-  cgtol = solver.cgtol
   r, rt = solver.Fx, solver.rt
   # s = solver.s #TODO I do not need this 
+  cgtol = solver.cgtol
   σk = solver.σ
   μk = solver.μ
-  
+
   residual!(nlp, x, r)
   f, ∇f = objgrad!(nlp, x, ∇f, r, recompute = false)
 
   # preallocate storage for products with A and A'
   A = solver.A # jac_op_residual!(nlp, x, Av, Atv)
   mul!(∇f, A', r)
-  
+
   norm_∇fk = norm(∇f)
   μk = 2^round(log2(norm_∇fk + 1))
   σk = μk * norm_∇fk
-
 
   # Stopping criterion: 
   ϵ = atol + rtol * norm_∇fk
@@ -159,17 +170,16 @@ function SolverCore.solve!(
   set_objective!(stats, f)
   set_dual_residual!(stats, norm_∇fk)
 
-
   if optimal
     @info("Optimal point found at initial point")
     @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
     @info @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
-end
-if verbose > 0 && mod(stats.iter, verbose) == 0
+  end
+  if verbose > 0 && mod(stats.iter, verbose) == 0
     @info @sprintf "%5s  %9s  %7s  %7s  %7s  %7s  %1s" "iter" "f" "‖∇f‖" "μ" "σ" "ρ" ""
     infoline =
-        @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
-end
+      @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk ""
+  end
 
   set_status!(
     stats,
@@ -185,7 +195,15 @@ end
     ),
   )
 
+  solver.σ = σk
+  solver.μ = μk
+  solver.cgtol = cgtol
+
   callback(nlp, solver, stats)
+
+  cgtol = solver.cgtol
+  σk = solver.σ
+  μk = solver.μ
 
   done = stats.status != :unknown
   cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * cgtol))
@@ -217,7 +235,7 @@ end
     # fck = obj(nlp, xt)
 
     # ΔTk = (slope + curv ) / 2  # TODO in Youssef paper they use σ/2 * norm(s)^2  - σk^2 * norm_s^2
-    ΔTk = -slope - curv/ 2  # TODO in Youssef paper they use σ/2 * norm(s)^2  - σk^2 * norm_s^2
+    ΔTk = -slope - curv / 2  # TODO in Youssef paper they use σ/2 * norm(s)^2  - σk^2 * norm_s^2
 
     if fck == -Inf
       set_status!(stats, :unbounded)
@@ -236,23 +254,31 @@ end
     # Update regularization parameters and Acceptance of the new candidate
     step_accepted = ρk >= η1 && σk >= η2
     if step_accepted
-        μk = max(μmin, μk / λ)
-        # update A implicitly
-        x .= xt
-        r .= rt
-        f = fck
-        grad!(nlp, x, ∇f)
-        set_objective!(stats, fck)
-        norm_∇fk = norm(∇f)
+      μk = max(μmin, μk / λ)
+      # update A implicitly
+      x .= xt
+      r .= rt
+      f = fck
+      grad!(nlp, x, ∇f)
+      set_objective!(stats, fck)
+      norm_∇fk = norm(∇f)
     else
-        μk = μk * λ
+      μk = μk * λ
     end
 
     set_iter!(stats, stats.iter + 1)
     set_time!(stats, time() - start_time)
 
     cgtol = max(rtol, min(T(0.1), √norm_∇fk, T(0.9) * cgtol))
+
+    solver.σ = σk
+    solver.μ = μk
+    solver.cgtol = cgtol
     callback(nlp, solver, stats)
+    σk = solver.σ
+    μk = solver.μ
+    cgtol = solver.cgtol
+
     ∇fk = solver.gx
     norm_∇fk = norm(∇fk)
     set_dual_residual!(stats, norm_∇fk)
@@ -265,26 +291,23 @@ end
       @info infoline
       σ_stat = step_accepted ? "↘" : "↗"
       infoline =
-          @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat #TODO print B norm
+        @sprintf "%5d  %9.2e  %7.1e  %7.1e  %7.1e  %+7.1e  %1s" stats.iter stats.objective norm_∇fk μk σk ρk σ_stat #TODO print B norm
     end
-    #Since the user can force the status to be something else, we need to check if the user has stopped the algorithm
-    if stats.status == :first_order #this is what user set in their callback
-      set_status!(stats, :first_order)
-    else
-      set_status!(
-        stats,
-        get_status(
-          nlp,
-          elapsed_time = stats.elapsed_time,
-          optimal = optimal,
-          small_residual = small_residual,
-          max_eval = max_eval,
-          iter = stats.iter,
-          max_iter = max_iter,
-          max_time = max_time,
-        ),
-      )
-    end
+
+    set_status!(
+      stats,
+      get_status(
+        nlp,
+        elapsed_time = stats.elapsed_time,
+        optimal = optimal,
+        small_residual = small_residual,
+        max_eval = max_eval,
+        iter = stats.iter,
+        max_iter = max_iter,
+        max_time = max_time,
+      ),
+    )
+
     done = stats.status != :unknown
   end
 

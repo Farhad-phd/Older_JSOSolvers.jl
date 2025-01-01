@@ -196,6 +196,7 @@ function SolverCore.solve!(
   #   @info "only solver allowed is trunked CG for LSR1Model"
   #   solver.subsolver_type = CrSolver
   # end
+  #TODO add checks for ranges of values for parameters
 
   reset!(stats)
   start_time = time()

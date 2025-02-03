@@ -30,22 +30,12 @@ end
 
 if Sys.isunix()
   @testset "Allocation tests" begin
-    @testset "$symsolver" for symsolver in
-                              (:LBFGSSolver, :FoSolver, :FomoSolver, :TrunkSolver, :TronSolver)
+    @testset "$symsolver" for symsolver in (:LBFGSSolver, :R2Solver, :TrunkSolver, :TronSolver)
       for model in NLPModelsTest.nlp_problems
         nlp = eval(Meta.parse(model))()
         if unconstrained(nlp) || (bound_constrained(nlp) && (symsolver == :TronSolver))
-          if (symsolver == :FoSolver || symsolver == :FomoSolver)
-            solver = eval(symsolver)(nlp; M = 2) # nonmonotone configuration allocates extra memory
-          else
-            solver = eval(symsolver)(nlp)
-          end
-          if symsolver == :FomoSolver
-            T = eltype(nlp.meta.x0)
-            stats = GenericExecutionStats(nlp, solver_specific = Dict(:avgβmax => T(0)))
-          else
-            stats = GenericExecutionStats(nlp)
-          end
+          solver = eval(symsolver)(nlp)
+          stats = GenericExecutionStats(nlp)
           with_logger(NullLogger()) do
             SolverCore.solve!(solver, nlp, stats)
             reset!(solver)

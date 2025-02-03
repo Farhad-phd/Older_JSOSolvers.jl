@@ -1,50 +1,6 @@
-export trunk, TrunkSolver, TRUNKParameterSet
+export trunk, TrunkSolver
 
 trunk(nlp::AbstractNLPModel; variant = :Newton, kwargs...) = trunk(Val(variant), nlp; kwargs...)
-
-# Default algorithm parameter values
-const TRUNK_bk_max = DefaultParameter(10)
-const TRUNK_monotone = DefaultParameter(true)
-const TRUNK_nm_itmax = DefaultParameter(25)
-
-"""
-    TRUNKParameterSet <: AbstractParameterSet
-
-This structure designed for `tron` regroups the following parameters:
-  - `bk_max`: algorithm parameter.
-  - `monotone`: algorithm parameter.
-  - `nm_itmax`: algorithm parameter.
-
-An additional constructor is
-
-    TRUNKParameterSet(nlp: kwargs...)
-
-where the kwargs are the parameters above.
-
-Default values are:
-  - `bk_max::Int = $(TRUNK_bk_max)`
-  - `monotone::Bool = $(TRUNK_monotone)`
-  - `nm_itmax::Int = $(TRUNK_nm_itmax)`
-"""
-struct TRUNKParameterSet <: AbstractParameterSet
-  bk_max::Parameter{Int, IntegerRange{Int}}
-  monotone::Parameter{Bool, BinaryRange{Bool}}
-  nm_itmax::Parameter{Int, IntegerRange{Int}}
-end
-
-# add a default constructor
-function TRUNKParameterSet(
-  nlp::AbstractNLPModel;
-  bk_max::Int = get(TRUNK_bk_max, nlp),
-  monotone::Bool = get(TRUNK_monotone, nlp),
-  nm_itmax::Int = get(TRUNK_nm_itmax, nlp),
-)
-  TRUNKParameterSet(
-    Parameter(bk_max, IntegerRange(1, typemax(Int))),
-    Parameter(monotone, BinaryRange()),
-    Parameter(nm_itmax, IntegerRange(1, typemax(Int))),
-  )
-end
 
 """
     trunk(nlp; kwargs...)
@@ -66,18 +22,30 @@ The keyword arguments may include
 - `max_eval::Int = -1`: maximum number of objective function evaluations.
 - `max_time::Float64 = 30.0`: maximum time limit in seconds.
 - `max_iter::Int = typemax(Int)`: maximum number of iterations.
-- `bk_max::Int = $(TRUNK_bk_max)`: algorithm parameter, see [`TRUNKParameterSet`](@ref).
-- `monotone::Bool = $(TRUNK_monotone)`: algorithm parameter, see [`TRUNKParameterSet`](@ref).
-- `nm_itmax::Int = $(TRUNK_nm_itmax)`: algorithm parameter, see [`TRUNKParameterSet`](@ref).
+- `bk_max::Int = 10`: algorithm parameter.
+- `monotone::Bool = true`: algorithm parameter.
+- `nm_itmax::Int = 25`: algorithm parameter.
 - `verbose::Int = 0`: if > 0, display iteration information every `verbose` iteration.
 - `subsolver_verbose::Int = 0`: if > 0, display iteration information every `subsolver_verbose` iteration of the subsolver.
-- `M`: linear operator that models a Hermitian positive-definite matrix of size `n`; passed to Krylov subsolvers. 
 
 # Output
 The returned value is a `GenericExecutionStats`, see `SolverCore.jl`.
 
 # Callback
-$(Callback_docstring)
+The callback is called at each iteration.
+The expected signature of the callback is `callback(nlp, solver, stats)`, and its output is ignored.
+Changing any of the input arguments will affect the subsequent iterations.
+In particular, setting `stats.status = :user` will stop the algorithm.
+All relevant information should be available in `nlp` and `solver`.
+Notably, you can access, and modify, the following:
+- `solver.x`: current iterate;
+- `solver.gx`: current gradient;
+- `stats`: structure holding the output of the algorithm (`GenericExecutionStats`), which contains, among other things:
+  - `stats.dual_feas`: norm of current gradient;
+  - `stats.iter`: current iteration counter;
+  - `stats.objective`: current objective function value;
+  - `stats.status`: current status of the algorithm. Should be `:unknown` unless the algorithm attained a stopping criterion. Changing this to anything will stop the algorithm, but you should use `:user` to properly indicate the intention.
+  - `stats.elapsed_time`: elapsed time in seconds.
 
 # References
 This implementation follows the description given in
@@ -128,17 +96,12 @@ mutable struct TrunkSolver{
   subsolver::Sub
   H::Op
   tr::TrustRegion{T, V}
-  params::TRUNKParameterSet
 end
 
 function TrunkSolver(
   nlp::AbstractNLPModel{T, V};
-  bk_max::Int = get(TRUNK_bk_max, nlp),
-  monotone::Bool = get(TRUNK_monotone, nlp),
-  nm_itmax::Int = get(TRUNK_nm_itmax, nlp),
   subsolver_type::Type{<:KrylovSolver} = CgSolver,
 ) where {T, V <: AbstractVector{T}}
-  params = TRUNKParameterSet(nlp; bk_max = bk_max, monotone = monotone, nm_itmax = nm_itmax)
   nvar = nlp.meta.nvar
   x = V(undef, nvar)
   xt = V(undef, nvar)
@@ -151,7 +114,7 @@ function TrunkSolver(
   H = hess_op!(nlp, x, Hs)
   Op = typeof(H)
   tr = TrustRegion(gt, one(T))
-  return TrunkSolver{T, V, Sub, Op}(x, xt, gx, gt, gn, Hs, subsolver, H, tr, params)
+  return TrunkSolver{T, V, Sub, Op}(x, xt, gx, gt, gn, Hs, subsolver, H, tr)
 end
 
 function SolverCore.reset!(solver::TrunkSolver)
@@ -175,7 +138,7 @@ end
   subsolver_type::Type{<:KrylovSolver} = CgSolver,
   kwargs...,
 ) where {V}
-  solver = TrunkSolver(nlp; subsolver_type = subsolver_type)
+  solver = TrunkSolver(nlp, subsolver_type = subsolver_type)
   return solve!(solver, nlp; x = x, kwargs...)
 end
 
@@ -191,9 +154,11 @@ function SolverCore.solve!(
   max_eval::Int = -1,
   max_iter::Int = typemax(Int),
   max_time::Float64 = 30.0,
+  bk_max::Int = 10,
+  monotone::Bool = true,
+  nm_itmax::Int = 25,
   verbose::Int = 0,
   subsolver_verbose::Int = 0,
-  M = I,
 ) where {T, V <: AbstractVector{T}}
   if !(nlp.meta.minimize)
     error("trunk only works for minimization problem")
@@ -201,11 +166,6 @@ function SolverCore.solve!(
   if !unconstrained(nlp)
     error("trunk should only be called for unconstrained problems. Try tron instead")
   end
-
-  # parameters
-  bk_max = value(solver.params.bk_max)
-  monotone = value(solver.params.monotone)
-  nm_itmax = value(solver.params.nm_itmax)
 
   reset!(stats)
   start_time = time()
@@ -231,11 +191,10 @@ function SolverCore.solve!(
   f = obj(nlp, x)
   grad!(nlp, x, ∇f)
   isa(nlp, QuasiNewtonModel) && (∇fn .= ∇f)
-  ∇fNorm2 = norm(∇f)
-  ∇fNormM = normM!(n, ∇f, M, Hs)
+  ∇fNorm2 = nrm2(n, ∇f)
   ϵ = atol + rtol * ∇fNorm2
   tr = solver.tr
-  tr.radius = min(max(∇fNormM / 10, one(T)), T(100))
+  tr.radius = min(max(∇fNorm2 / 10, one(T)), T(100))
 
   # Non-monotone mode parameters.
   # fmin: current best overall objective value
@@ -250,8 +209,6 @@ function SolverCore.solve!(
   set_objective!(stats, f)
   set_dual_residual!(stats, ∇fNorm2)
   optimal = ∇fNorm2 ≤ ϵ
-  fmin = min(-one(T), f) / eps(T)
-  unbounded = f < fmin
 
   verbose > 0 && @info log_header(
     [:iter, :f, :dual, :radius, :ratio, :inner, :bk, :cgstatus],
@@ -266,7 +223,6 @@ function SolverCore.solve!(
       nlp,
       elapsed_time = stats.elapsed_time,
       optimal = optimal,
-      unbounded = unbounded,
       max_eval = max_eval,
       iter = stats.iter,
       max_iter = max_iter,
@@ -280,9 +236,9 @@ function SolverCore.solve!(
 
   while !done
     # Compute inexact solution to trust-region subproblem
-    # minimize g's + 1/2 s'Hs  subject to ‖s‖_M ≤ radius.
+    # minimize g's + 1/2 s'Hs  subject to ‖s‖ ≤ radius.
     # In this particular case, we may use an operator with preallocation.
-    cgtol = max(rtol, min(T(0.1), √∇fNormM, T(0.9) * cgtol))
+    cgtol = max(rtol, min(T(0.1), √∇fNorm2, T(0.9) * cgtol))
     ∇f .*= -1
     Krylov.solve!(
       subsolver,
@@ -292,9 +248,7 @@ function SolverCore.solve!(
       rtol = cgtol,
       radius = tr.radius,
       itmax = max(2 * n, 50),
-      timemax = max_time - stats.elapsed_time,
       verbose = subsolver_verbose,
-      M = M,
     )
     s, cg_stats = subsolver.x, subsolver.stats
 
@@ -409,7 +363,6 @@ function SolverCore.solve!(
         tr.good_grad = false
       end
       ∇fNorm2 = nrm2(n, ∇f)
-      ∇fNormM = normM!(n, ∇f, M, Hs)
 
       set_objective!(stats, f)
       set_time!(stats, time() - start_time)
@@ -430,7 +383,7 @@ function SolverCore.solve!(
           ∇fNorm2,
           tr.radius,
           tr.ratio,
-          cg_stats.niter,
+          length(cg_stats.residuals),
           bk,
           cg_stats.status,
         ])
@@ -440,7 +393,6 @@ function SolverCore.solve!(
     update!(tr, sNorm)
 
     optimal = ∇fNorm2 ≤ ϵ
-    unbounded = f < fmin
 
     set_status!(
       stats,
@@ -448,7 +400,6 @@ function SolverCore.solve!(
         nlp,
         elapsed_time = stats.elapsed_time,
         optimal = optimal,
-        unbounded = unbounded,
         max_eval = max_eval,
         iter = stats.iter,
         max_iter = max_iter,

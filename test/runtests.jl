@@ -18,7 +18,7 @@ using JSOSolvers
 end
 
 @testset "Test iteration limit" begin
-  @testset "$fun" for fun in (R2, fomo, lbfgs, tron, trunk)
+  @testset "$fun" for fun in (R2, lbfgs, tron, trunk)
     f(x) = (x[1] - 1)^2 + 4 * (x[2] - x[1]^2)^2
     nlp = ADNLPModel(f, [-1.2; 1.0])
 
@@ -32,19 +32,6 @@ end
 
     stats = eval(fun)(nlp, max_iter = 1)
     @test stats.status == :max_iter
-  end
-end
-
-@testset "Test unbounded below" begin
-  @testset "$fun" for fun in (R2, fomo, lbfgs, tron, trunk)
-    T = Float64
-    x0 = [T(0)]
-    f(x) = -exp(x[1])
-    nlp = ADNLPModel(f, x0)
-
-    stats = eval(fun)(nlp)
-    @test stats.status == :unbounded
-    @test stats.objective < -one(T) / eps(T)
   end
 end
 
@@ -77,20 +64,4 @@ include("objgrad-on-tron.jl")
 
   nls = ADNLSModel(x -> [100 * (x[2] - x[1]^2); x[1] - 1], [-1.2; 1.0], 2)
   stats = tron(nls, max_radius = max_radius, increase_factor = increase_factor, callback = cb)
-end
-
-@testset "Preconditioner in Trunk" begin
-  x0 = [-1.2; 1.0]
-  nlp = ADNLPModel(x -> 100 * (x[2] - x[1]^2)^2 + (x[1] - 1)^2, x0)
-  function DiagPrecon(x)
-    H = Matrix(hess(nlp, x))
-    λmin = minimum(eigvals(H))
-    Diagonal(H + (λmin + 1e-6) * I)
-  end
-  M = DiagPrecon(x0)
-  function callback(nlp, solver, stats)
-    M[:] = DiagPrecon(solver.x)
-  end
-  stats = trunk(nlp, callback = callback, M = M)
-  @test stats.status == :first_order
 end
